@@ -18,8 +18,14 @@ export class OrderItem {
   @Column({ type: 'varchar', length: 50 })
   itemId!: string;
 
+  @Column({ type: 'varchar', length: 10 })
+  itemType!: 'menu' | 'shop';
+
   @Column({ type: 'varchar', length: 150 })
   name!: string;
+
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  nameAr?: string | null;
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   price!: number;

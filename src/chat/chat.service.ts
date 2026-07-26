@@ -4,11 +4,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Chat } from './entities/chat.entity';
-import { ChatMessage } from './entities/chat-message.entity';
-import { User } from '../users/entities/user.entity';
+import { EntityManager, Repository } from 'typeorm';
+import { UserRole } from '../enums/user-role.enum';
 import { NotificationsService } from '../notifications/notifications.service';
+import { User } from '../users/entities/user.entity';
+import { ChatMessage } from './entities/chat-message.entity';
+import { Chat } from './entities/chat.entity';
+
+const SUPPORT_TEAM_PHONE = '+96170000000';
 
 @Injectable()
 export class ChatService {
@@ -190,5 +193,83 @@ export class ChatService {
 
   async findById(chatId: number): Promise<Chat | null> {
     return this.chatRepository.findOne({ where: { id: chatId } });
+  }
+
+  async findSupportTeamUser(): Promise<User> {
+    const user = await this.userRepository.findOne({
+      where: { phone: SUPPORT_TEAM_PHONE },
+    });
+
+    if (!user) {
+      throw new Error(
+        `Support team account not found (phone: ${SUPPORT_TEAM_PHONE}). Seed the database first.`,
+      );
+    }
+
+    return user;
+  }
+
+  async getOrCreateThreadWithManager(
+    currentUserId: number,
+    participantId: number,
+    manager: EntityManager,
+  ): Promise<Chat> {
+    if (currentUserId === participantId) {
+      throw new BadRequestException('Cannot create a chat with yourself');
+    }
+
+    const participant = await manager.findOne(User, {
+      where: { id: participantId },
+    });
+
+    if (!participant) {
+      throw new NotFoundException('Participant not found');
+    }
+
+    const existing = await manager.findOne(Chat, {
+      where: [
+        { user1Id: currentUserId, user2Id: participantId },
+        { user1Id: participantId, user2Id: currentUserId },
+      ],
+    });
+
+    if (existing) {
+      return existing;
+    }
+
+    const thread = manager.create(Chat, {
+      user1Id: currentUserId,
+      user2Id: participantId,
+    });
+
+    return manager.save(thread);
+  }
+
+  async findAllSupportThreads(
+    adminId: number,
+    pagination: { skip?: number; take?: number },
+  ): Promise<{ items: Chat[]; total: number; skip: number; take: number }> {
+    const supportUser = await this.findSupportTeamUser();
+    const skip = pagination.skip ?? 0;
+    const take = pagination.take ?? 20;
+
+    const qb = this.chatRepository
+      .createQueryBuilder('chat')
+      .leftJoinAndSelect('chat.user1', 'user1')
+      .leftJoinAndSelect('chat.user2', 'user2')
+      .leftJoinAndSelect('chat.messages', 'messages')
+      // .where(
+      //   '(chat.user1Id = :supportId AND chat.user2Id = :adminId) OR (chat.user1Id = :adminId AND chat.user2Id = :supportId)',
+      //   { supportId: supportUser.id, adminId },
+      // )
+      .where('user1.role = :supportRole OR user2.role = :supportRole', {
+        supportRole: UserRole.ADMIN,
+      })
+      .orderBy('chat.updatedAt', 'DESC')
+      .skip(skip)
+      .take(take);
+
+    const [items, total] = await qb.getManyAndCount();
+    return { items, total, skip, take };
   }
 }

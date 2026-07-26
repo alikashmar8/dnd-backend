@@ -12,6 +12,7 @@ import { ShopItem } from '../../shop-items/entities/shop-item.entity';
 import { ShopCategory } from '../../shop-items/entities/shop-category.entity';
 import { Order } from '../../orders/entities/order.entity';
 import { OrderItem } from '../../orders/entities/order-item.entity';
+import { Ad } from '../../ads/entities/ad.entity';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { OrderItem } from '../../orders/entities/order-item.entity';
       ShopCategory,
       Order,
       OrderItem,
+      Ad,
     ]),
   ],
   providers: [SeedService],

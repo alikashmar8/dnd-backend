@@ -21,8 +21,14 @@ export class MenuItem {
   @Column({ type: 'varchar', length: 150 })
   name!: string;
 
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  nameAr?: string | null;
+
   @Column({ type: 'text', nullable: true })
   description!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  descriptionAr?: string | null;
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   price!: number;
@@ -38,6 +44,9 @@ export class MenuItem {
 
   @Column({ type: 'simple-array', default: '' })
   dietaryTags!: string[];
+
+  @Column({ type: 'simple-array', nullable: true })
+  dietaryTagsAr?: string[] | null;
 
   @Column({ type: 'boolean', default: true })
   available!: boolean;

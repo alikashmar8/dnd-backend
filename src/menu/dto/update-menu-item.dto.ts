@@ -22,7 +22,15 @@ export class UpdateMenuItemDto {
 
   @IsOptional()
   @IsString()
+  nameAr?: string;
+
+  @IsOptional()
+  @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  descriptionAr?: string;
 
   @IsOptional()
   @IsString()

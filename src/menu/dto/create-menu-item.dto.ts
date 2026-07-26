@@ -16,7 +16,15 @@ export class CreateMenuItemDto {
 
   @IsOptional()
   @IsString()
+  nameAr?: string;
+
+  @IsOptional()
+  @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  descriptionAr?: string;
 
   @IsNumber()
   @Min(0)
@@ -33,6 +41,11 @@ export class CreateMenuItemDto {
   @IsArray()
   @IsString({ each: true })
   dietaryTags?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  dietaryTagsAr?: string[];
 
   @IsOptional()
   @IsNumber()

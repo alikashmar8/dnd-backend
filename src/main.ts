@@ -2,12 +2,16 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { TypeOrmExceptionFilter } from './common/filters/typeorm-exception.filter';
+import { LocaleMiddleware } from './common/middleware/locale.middleware';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // Global prefix
   app.setGlobalPrefix('api');
+
+  // Locale middleware (parses Accept-Language header)
+  app.use(new LocaleMiddleware().use.bind(new LocaleMiddleware()));
 
   // CORS configuration
   app.enableCors({

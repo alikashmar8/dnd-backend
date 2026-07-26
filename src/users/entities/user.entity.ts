@@ -55,6 +55,12 @@ export class User {
   @OneToMany(() => Order, (order) => order.driver)
   deliveryOrders!: Order[];
 
+  @OneToMany(() => Order, (order) => order.kitchenUser)
+  kitchenOrders!: Order[];
+
+  @OneToMany(() => Order, (order) => order.warehouseUser)
+  warehouseOrders!: Order[];
+
   @OneToMany(() => Chat, (chat) => chat.user1)
   chatsAsUser1!: Chat[];
 

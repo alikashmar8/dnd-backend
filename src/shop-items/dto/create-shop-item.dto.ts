@@ -14,12 +14,24 @@ export class CreateShopItemDto {
   @IsString()
   name!: string;
 
+  @IsOptional()
+  @IsString()
+  nameAr?: string;
+
   @IsString()
   unit!: string;
 
   @IsOptional()
   @IsString()
+  unitAr?: string;
+
+  @IsOptional()
+  @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  descriptionAr?: string;
 
   @IsNumber()
   @Min(0)
@@ -37,6 +49,11 @@ export class CreateShopItemDto {
   @IsArray()
   @IsString({ each: true })
   dietaryTags?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  dietaryTagsAr?: string[];
 
   @IsOptional()
   @IsBoolean()

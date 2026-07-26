@@ -1,12 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Order } from '../orders/entities/order.entity';
 import { OrderItem } from '../orders/entities/order-item.entity';
 import { User } from '../users/entities/user.entity';
-import { Restaurant } from '../restaurants/entities/restaurant.entity';
-import { MenuItem } from '../menu/entities/menu-item.entity';
-import { ShopItem } from '../shop-items/entities/shop-item.entity';
 import { OrderStatus } from '../enums/order-status.enum';
 import { UserRole } from '../enums/user-role.enum';
 import { DateRangeDto } from './dto/date-range.dto';
@@ -22,12 +19,6 @@ export class AnalyticsService {
     private readonly orderItemRepository: Repository<OrderItem>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-    @InjectRepository(Restaurant)
-    private readonly restaurantRepository: Repository<Restaurant>,
-    @InjectRepository(MenuItem)
-    private readonly menuItemRepository: Repository<MenuItem>,
-    @InjectRepository(ShopItem)
-    private readonly shopItemRepository: Repository<ShopItem>,
   ) {}
 
   async getRevenueMetrics(dateRange?: DateRangeDto) {
@@ -158,73 +149,30 @@ export class AnalyticsService {
   }
 
   async getMerchantStatistics(dateRange?: DateRangeDto) {
-    const restaurantQuery = this.orderRepository
-      .createQueryBuilder('order')
-      .leftJoin('order.restaurant', 'restaurant')
-      .select([
-        'restaurant.id as restaurantId',
-        'restaurant.name as restaurantName',
-        'COUNT(*) as orderCount',
-        'SUM(order.total) as totalRevenue',
-        'AVG(order.total) as averageOrderValue',
-      ])
-      .where('order.source = :source', { source: 'restaurant' })
-      .andWhere('order.status != :cancelled', {
-        cancelled: OrderStatus.CANCELLED,
-      });
-
-    if (dateRange?.startDate && dateRange?.endDate) {
-      restaurantQuery.andWhere(
-        'order.createdAt BETWEEN :startDate AND :endDate',
-        {
-          startDate: new Date(dateRange.startDate),
-          endDate: new Date(dateRange.endDate),
-        },
-      );
-    }
-
-    const restaurantResults = await restaurantQuery
-      .groupBy('restaurant.id, restaurant.name')
-      .orderBy('SUM(order.total)', 'DESC')
-      .getRawMany();
-
-    const shopQuery = this.orderRepository
+    const query = this.orderRepository
       .createQueryBuilder('order')
       .select([
         'COUNT(*) as orderCount',
         'SUM(order.total) as totalRevenue',
         'AVG(order.total) as averageOrderValue',
       ])
-      .where('order.source = :source', { source: 'shop' })
       .andWhere('order.status != :cancelled', {
         cancelled: OrderStatus.CANCELLED,
       });
 
     if (dateRange?.startDate && dateRange?.endDate) {
-      shopQuery.andWhere('order.createdAt BETWEEN :startDate AND :endDate', {
+      query.andWhere('order.createdAt BETWEEN :startDate AND :endDate', {
         startDate: new Date(dateRange.startDate),
         endDate: new Date(dateRange.endDate),
       });
     }
 
-    const shopResults = await shopQuery.getRawMany();
+    const results = await query.getRawMany();
 
     return {
-      restaurants: restaurantResults.map((row) => ({
-        restaurantId: row.restaurantId,
-        restaurantName: row.restaurantName,
-        orderCount: Number(row.orderCount || 0),
-        totalRevenue: Number(row.totalRevenue || 0),
-        averageOrderValue: Number(row.averageOrderValue || 0),
-      })),
-      shop:
-        shopResults.length > 0
-          ? {
-              orderCount: Number(shopResults[0].orderCount || 0),
-              totalRevenue: Number(shopResults[0].totalRevenue || 0),
-              averageOrderValue: Number(shopResults[0].averageOrderValue || 0),
-            }
-          : null,
+      orderCount: Number(results[0]?.orderCount || 0),
+      totalRevenue: Number(results[0]?.totalRevenue || 0),
+      averageOrderValue: Number(results[0]?.averageOrderValue || 0),
     };
   }
 

@@ -5,6 +5,10 @@ export class CreateMenuCategoryDto {
   name!: string;
 
   @IsOptional()
+  @IsString()
+  nameAr?: string;
+
+  @IsOptional()
   @IsNumber()
   @Min(0)
   sortOrder?: number;

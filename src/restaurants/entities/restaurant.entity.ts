@@ -9,7 +9,6 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Address } from '../../addresses/entities/address.entity';
-import { Order } from '../../orders/entities/order.entity';
 import { MenuItem } from '../../menu/entities/menu-item.entity';
 import { MealType } from '../../enums/meal-type.enum';
 
@@ -20,6 +19,9 @@ export class Restaurant {
 
   @Column({ type: 'varchar', length: 150 })
   name!: string;
+
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  nameAr?: string | null;
 
   @Column({ type: 'enum', enum: MealType })
   mealType!: MealType;
@@ -39,6 +41,9 @@ export class Restaurant {
   @Column({ type: 'simple-array', default: '' })
   tags!: string[];
 
+  @Column({ type: 'simple-array', nullable: true })
+  tagsAr?: string[] | null;
+
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
 
@@ -53,9 +58,6 @@ export class Restaurant {
   @ManyToOne(() => Address, { onDelete: 'CASCADE' })
   @JoinColumn({})
   address!: Address;
-
-  @OneToMany(() => Order, (order) => order.restaurant)
-  orders!: Order[];
 
   @OneToMany(() => MenuItem, (item) => item.restaurant)
   menuItems!: MenuItem[];

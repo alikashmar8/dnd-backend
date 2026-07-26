@@ -20,11 +20,20 @@ export class ShopItem {
   @Column({ type: 'varchar', length: 150 })
   name!: string;
 
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  nameAr?: string | null;
+
   @Column({ type: 'varchar', length: 50 })
   unit!: string;
 
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  unitAr?: string | null;
+
   @Column({ type: 'text', nullable: true })
   description!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  descriptionAr?: string | null;
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   price!: number;
@@ -43,6 +52,9 @@ export class ShopItem {
 
   @Column({ type: 'simple-array', default: '' })
   dietaryTags!: string[];
+
+  @Column({ type: 'simple-array', nullable: true })
+  dietaryTagsAr?: string[] | null;
 
   @CreateDateColumn({})
   createdAt!: Date;

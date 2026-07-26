@@ -29,7 +29,9 @@ export class AuthController {
     @Body() loginDto: LoginDto,
     @Headers('user-agent') userAgent?: string,
   ) {
-    return this.authService.login(loginDto, userAgent);
+    console.log(loginDto);
+
+    return await this.authService.login(loginDto, userAgent);
   }
 
   @Post('logout')

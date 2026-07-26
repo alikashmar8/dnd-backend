@@ -16,6 +16,9 @@ export class MenuCategory {
   @Column({ type: 'varchar', length: 100 })
   name!: string;
 
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  nameAr?: string | null;
+
   @Column({ type: 'int', default: 0 })
   sortOrder!: number;
 

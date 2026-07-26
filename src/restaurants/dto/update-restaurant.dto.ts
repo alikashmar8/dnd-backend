@@ -18,6 +18,10 @@ export class UpdateRestaurantDto {
   name?: string;
 
   @IsOptional()
+  @IsString()
+  nameAr?: string;
+
+  @IsOptional()
   @IsEnum(MealType)
   mealType?: MealType;
 
@@ -38,6 +42,11 @@ export class UpdateRestaurantDto {
   @IsArray()
   @IsString({ each: true })
   tags?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tagsAr?: string[];
 
   @IsOptional()
   @IsBoolean()

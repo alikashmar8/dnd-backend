@@ -21,6 +21,26 @@ export class UpdateShopItemDto {
   name?: string;
 
   @IsOptional()
+  @IsString()
+  nameAr?: string;
+
+  @IsOptional()
+  @IsString()
+  unit?: string;
+
+  @IsOptional()
+  @IsString()
+  unitAr?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  descriptionAr?: string;
+
+  @IsOptional()
   @IsNumber()
   @Min(0)
   stockQuantity?: number;

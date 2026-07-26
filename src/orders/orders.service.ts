@@ -5,18 +5,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
-import { Order, OrderSource } from './entities/order.entity';
-import { OrderItem } from './entities/order-item.entity';
+import { DataSource, In, Repository } from 'typeorm';
 import { Address } from '../addresses/entities/address.entity';
-import { MenuItem } from '../menu/entities/menu-item.entity';
-import { ShopItem } from '../shop-items/entities/shop-item.entity';
-import { Restaurant } from '../restaurants/entities/restaurant.entity';
-import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderStatus } from '../enums/order-status.enum';
 import { UserRole } from '../enums/user-role.enum';
-import { User } from '../users/entities/user.entity';
+import { MenuItem } from '../menu/entities/menu-item.entity';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ShopItem } from '../shop-items/entities/shop-item.entity';
+import { User } from '../users/entities/user.entity';
+import { CreateOrderDto } from './dto/create-order.dto';
+import { OrderItem } from './entities/order-item.entity';
+import { Order } from './entities/order.entity';
 
 @Injectable()
 export class OrdersService {
@@ -31,8 +30,6 @@ export class OrdersService {
     private readonly menuItemRepository: Repository<MenuItem>,
     @InjectRepository(ShopItem)
     private readonly shopItemRepository: Repository<ShopItem>,
-    @InjectRepository(Restaurant)
-    private readonly restaurantRepository: Repository<Restaurant>,
     private readonly dataSource: DataSource,
     private readonly notificationsService: NotificationsService,
   ) {}
@@ -54,16 +51,16 @@ export class OrdersService {
     const qb = this.orderRepository
       .createQueryBuilder('order')
       .leftJoinAndSelect('order.items', 'item')
-      .leftJoinAndSelect('order.restaurant', 'restaurant')
       .leftJoinAndSelect('order.address', 'address')
       .leftJoinAndSelect('order.customer', 'customer')
       .leftJoinAndSelect('order.driver', 'driver')
+      .leftJoinAndSelect('order.kitchenUser', 'kitchenUser')
+      .leftJoinAndSelect('order.warehouseUser', 'warehouseUser')
       .orderBy('order.createdAt', 'DESC')
       .skip(skip)
       .take(take);
 
     if (currentUser.role === UserRole.ADMIN) {
-      // Admin can see all orders — apply manual filters if provided
       if (query.customerId) {
         qb.andWhere('order.customerId = :customerId', {
           customerId: query.customerId,
@@ -80,6 +77,28 @@ export class OrdersService {
       qb.andWhere('order.driverId = :currentUserId', {
         currentUserId: currentUser.id,
       });
+    } else if (currentUser.role === UserRole.KITCHEN) {
+      qb.andWhere(
+        '(order.status IN (:...statuses) AND EXISTS (SELECT 1 FROM order_items oi WHERE oi."orderId" = order.id AND oi."itemType" = \'menu\'))',
+        {
+          statuses: [OrderStatus.CONFIRMED, OrderStatus.PREPARING],
+        },
+      );
+      qb.andWhere(
+        '(order.kitchenUserId IS NULL OR order.kitchenUserId = :currentUserId)',
+        { currentUserId: currentUser.id },
+      );
+    } else if (currentUser.role === UserRole.WAREHOUSE) {
+      qb.andWhere(
+        '(order.status IN (:...statuses) AND EXISTS (SELECT 1 FROM order_items oi WHERE oi."orderId" = order.id AND oi."itemType" = \'shop\'))',
+        {
+          statuses: [OrderStatus.CONFIRMED, OrderStatus.PREPARING],
+        },
+      );
+      qb.andWhere(
+        '(order.warehouseUserId IS NULL OR order.warehouseUserId = :currentUserId)',
+        { currentUserId: currentUser.id },
+      );
     }
 
     if (query.status) {
@@ -102,10 +121,11 @@ export class OrdersService {
     const qb = this.orderRepository
       .createQueryBuilder('order')
       .leftJoinAndSelect('order.items', 'item')
-      .leftJoinAndSelect('order.restaurant', 'restaurant')
       .leftJoinAndSelect('order.address', 'address')
       .leftJoinAndSelect('order.customer', 'customer')
       .leftJoinAndSelect('order.driver', 'driver')
+      .leftJoinAndSelect('order.kitchenUser', 'kitchenUser')
+      .leftJoinAndSelect('order.warehouseUser', 'warehouseUser')
       .where('order.id = :id', { id });
 
     if (currentUser.role === UserRole.CUSTOMER) {
@@ -117,7 +137,6 @@ export class OrdersService {
         currentUserId: currentUser.id,
       });
     }
-    // Admin can see any order, so no additional filter needed
 
     const order = await qb.getOne();
 
@@ -150,8 +169,6 @@ export class OrdersService {
     return await this.createOrderFromItems(
       createOrderDto.customerId,
       currentUser.id,
-      createOrderDto.source,
-      createOrderDto.restaurantId || null,
       address.id,
       createOrderDto.items,
     );
@@ -160,42 +177,49 @@ export class OrdersService {
   async createOrderFromItems(
     customerId: number,
     createdById: number | null,
-    source: OrderSource,
-    restaurantId: number | null,
     addressId: number,
-    items: Array<{ itemId: number; quantity: number }>,
+    items: Array<{
+      itemId: number;
+      quantity: number;
+      itemType?: 'menu' | 'shop';
+    }>,
   ): Promise<Order> {
     let subtotal = 0;
     const itemsToInsert: OrderItem[] = [];
-    let finalRestaurantId: number | null = null;
 
     const createdOrder = await this.dataSource.transaction(async (manager) => {
-      if (source === OrderSource.RESTAURANT) {
-        if (!restaurantId) {
-          throw new BadRequestException(
-            'restaurantId is required for restaurant orders',
-          );
-        }
+      const menuItemsToFetch = items
+        .filter((item) => item.itemType === 'menu' || !item.itemType)
+        .map((item) => item.itemId);
+      const shopItemsToFetch = items
+        .filter((item) => item.itemType === 'shop')
+        .map((item) => item.itemId);
 
-        const restaurant = await manager.findOne(Restaurant, {
-          where: { id: restaurantId },
-        });
+      const fetchedMenuItems =
+        menuItemsToFetch.length > 0
+          ? await manager.find(MenuItem, {
+              where: { id: In(menuItemsToFetch) },
+            })
+          : [];
+      const fetchedShopItems =
+        shopItemsToFetch.length > 0
+          ? await manager.find(ShopItem, {
+              where: { id: In(shopItemsToFetch) },
+            })
+          : [];
 
-        if (!restaurant) {
-          throw new NotFoundException('Restaurant not found');
-        }
-
-        finalRestaurantId = restaurant.id;
-      }
+      const menuItemMap = new Map(
+        fetchedMenuItems.map((item) => [item.id, item]),
+      );
+      const shopItemMap = new Map(
+        fetchedShopItems.map((item) => [item.id, item]),
+      );
 
       for (const itemDto of items) {
-        if (source === OrderSource.RESTAURANT) {
-          const menuItem = await manager.findOne(MenuItem, {
-            where: { id: itemDto.itemId },
-            relations: {
-              restaurant: true,
-            },
-          });
+        const itemType = itemDto.itemType || 'menu';
+
+        if (itemType === 'menu') {
+          const menuItem = menuItemMap.get(itemDto.itemId);
 
           if (!menuItem || !menuItem.available) {
             throw new NotFoundException(
@@ -203,25 +227,19 @@ export class OrdersService {
             );
           }
 
-          if (menuItem.restaurant?.id !== restaurantId) {
-            throw new BadRequestException(
-              'All menu items must belong to the selected restaurant',
-            );
-          }
-
           subtotal += Number(menuItem.price) * itemDto.quantity;
           const orderItem = this.orderItemRepository.create({
             itemId: menuItem.id.toString(),
+            itemType: 'menu',
             name: menuItem.name,
+            nameAr: menuItem.nameAr ?? null,
             price: Number(menuItem.price),
             quantity: itemDto.quantity,
             image: menuItem.image,
           });
           itemsToInsert.push(orderItem);
         } else {
-          const shopItem = await manager.findOne(ShopItem, {
-            where: { id: itemDto.itemId },
-          });
+          const shopItem = shopItemMap.get(itemDto.itemId);
 
           if (!shopItem || !shopItem.available) {
             throw new NotFoundException(
@@ -241,7 +259,9 @@ export class OrdersService {
           subtotal += Number(shopItem.price) * itemDto.quantity;
           const orderItem = this.orderItemRepository.create({
             itemId: shopItem.id.toString(),
+            itemType: 'shop',
             name: shopItem.name,
+            nameAr: shopItem.nameAr ?? null,
             price: Number(shopItem.price),
             quantity: itemDto.quantity,
             image: shopItem.image,
@@ -251,17 +271,21 @@ export class OrdersService {
       }
 
       const tax = Number((subtotal * 0.05).toFixed(2));
-      const deliveryFee = source === OrderSource.RESTAURANT ? 7 : 5;
+      const deliveryFee = 5;
       const total = Number((subtotal + tax + deliveryFee).toFixed(2));
-      const etaMinutes = source === OrderSource.RESTAURANT ? 35 : 45;
-      const orderId = `ORD-${Date.now()}`;
+      const etaMinutes = 40;
+      const today = new Date();
+      const orderId = `ORD-${today.getFullYear()}-${(today.getMonth() + 1)
+        .toString()
+        .padStart(
+          2,
+          '0',
+        )}-${today.getDate().toString().padStart(2, '0')}-${Math.floor(Math.random() * 10000)}`;
 
       let order = this.orderRepository.create({
         id: orderId,
         customerId,
         createdById,
-        source,
-        restaurantId: finalRestaurantId,
         status: OrderStatus.PENDING,
         addressId,
         etaMinutes,
@@ -292,7 +316,6 @@ export class OrdersService {
       relations: {
         items: true,
         address: true,
-        restaurant: true,
         driver: true,
       },
     });
@@ -311,7 +334,13 @@ export class OrdersService {
   ): Promise<Order> {
     const order = await this.orderRepository.findOne({
       where: { id: orderId },
-      relations: { driver: true, restaurant: true, address: true, items: true },
+      relations: {
+        driver: true,
+        address: true,
+        items: true,
+        kitchenUser: true,
+        warehouseUser: true,
+      },
     });
 
     if (!order) {
@@ -336,7 +365,6 @@ export class OrdersService {
       order.status = OrderStatus.CANCELLED;
       await this.orderRepository.save(order);
 
-      // Send notification
       try {
         await this.notificationsService.sendOrderStatusNotification(
           order.customerId,
@@ -357,9 +385,10 @@ export class OrdersService {
 
       const validDriverTransitions: Record<OrderStatus, OrderStatus[]> = {
         [OrderStatus.PENDING]: [],
-        [OrderStatus.CONFIRMED]: [OrderStatus.OUT_FOR_DELIVERY],
-        [OrderStatus.PREPARING]: [OrderStatus.OUT_FOR_DELIVERY],
-        [OrderStatus.OUT_FOR_DELIVERY]: [OrderStatus.DELIVERED],
+        [OrderStatus.CONFIRMED]: [],
+        [OrderStatus.PREPARING]: [],
+        [OrderStatus.WAITING_FOR_PICKUP]: [OrderStatus.IN_ROUTE],
+        [OrderStatus.IN_ROUTE]: [OrderStatus.DELIVERED],
         [OrderStatus.DELIVERED]: [],
         [OrderStatus.COMPLETED]: [],
         [OrderStatus.CANCELLED]: [],
@@ -375,7 +404,6 @@ export class OrdersService {
       order.status = status;
       await this.orderRepository.save(order);
 
-      // Send notification to customer
       try {
         await this.notificationsService.sendOrderStatusNotification(
           order.customerId,
@@ -389,45 +417,42 @@ export class OrdersService {
       return order;
     }
 
-    const validAdminTransitions: Record<OrderStatus, OrderStatus[]> = {
-      [OrderStatus.PENDING]: [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
-      [OrderStatus.CONFIRMED]: [
-        OrderStatus.PREPARING,
-        OrderStatus.OUT_FOR_DELIVERY,
-        OrderStatus.CANCELLED,
-      ],
-      [OrderStatus.PREPARING]: [
-        OrderStatus.OUT_FOR_DELIVERY,
-        OrderStatus.CANCELLED,
-      ],
-      [OrderStatus.OUT_FOR_DELIVERY]: [OrderStatus.DELIVERED],
-      [OrderStatus.DELIVERED]: [OrderStatus.COMPLETED],
-      [OrderStatus.COMPLETED]: [],
-      [OrderStatus.CANCELLED]: [],
-    };
+    if (currentUser.role === UserRole.ADMIN) {
+      const validAdminTransitions: Record<OrderStatus, OrderStatus[]> = {
+        [OrderStatus.PENDING]: [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
+        [OrderStatus.CONFIRMED]: [OrderStatus.CANCELLED],
+        [OrderStatus.PREPARING]: [OrderStatus.CANCELLED],
+        [OrderStatus.WAITING_FOR_PICKUP]: [],
+        [OrderStatus.IN_ROUTE]: [],
+        [OrderStatus.DELIVERED]: [OrderStatus.COMPLETED],
+        [OrderStatus.COMPLETED]: [],
+        [OrderStatus.CANCELLED]: [],
+      };
 
-    const allowedAdminTransitions = validAdminTransitions[order.status] || [];
-    if (!allowedAdminTransitions.includes(status)) {
-      throw new BadRequestException(
-        `Admin cannot transition from ${order.status} to ${status}`,
-      );
+      const allowedAdminTransitions = validAdminTransitions[order.status] || [];
+      if (!allowedAdminTransitions.includes(status)) {
+        throw new BadRequestException(
+          `Admin cannot transition from ${order.status} to ${status}`,
+        );
+      }
+
+      order.status = status;
+      await this.orderRepository.save(order);
+
+      try {
+        await this.notificationsService.sendOrderStatusNotification(
+          order.customerId,
+          order.id,
+          status,
+        );
+      } catch (error) {
+        console.error('Failed to send order status notification:', error);
+      }
+
+      return order;
     }
 
-    order.status = status;
-    await this.orderRepository.save(order);
-
-    // Send notification to customer
-    try {
-      await this.notificationsService.sendOrderStatusNotification(
-        order.customerId,
-        order.id,
-        status,
-      );
-    } catch (error) {
-      console.error('Failed to send order status notification:', error);
-    }
-
-    return order;
+    throw new ForbiddenException('Insufficient permissions');
   }
 
   async assignDriver(
@@ -437,7 +462,7 @@ export class OrdersService {
   ): Promise<Order> {
     const order = await this.orderRepository.findOne({
       where: { id: orderId },
-      relations: { driver: true, restaurant: true, address: true, items: true },
+      relations: { driver: true, address: true, items: true },
     });
 
     if (!order) {
@@ -447,5 +472,208 @@ export class OrdersService {
     order.driverId = driverId;
     await this.orderRepository.save(order);
     return order;
+  }
+
+  async assignKitchenUser(
+    currentUser: User,
+    orderId: string,
+    userId?: number,
+  ): Promise<Order> {
+    if (
+      currentUser.role !== UserRole.KITCHEN &&
+      currentUser.role !== UserRole.ADMIN
+    ) {
+      throw new ForbiddenException('Only kitchen users can be assigned');
+    }
+
+    const targetUserId =
+      currentUser.role === UserRole.ADMIN ? userId : currentUser.id;
+
+    if (!targetUserId) {
+      throw new BadRequestException(
+        'userId is required when admin assigns a kitchen user',
+      );
+    }
+
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+      relations: { items: true, kitchenUser: true, warehouseUser: true },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (
+      order.status !== OrderStatus.CONFIRMED &&
+      order.status !== OrderStatus.PREPARING
+    ) {
+      throw new BadRequestException('Order must be confirmed or preparing');
+    }
+
+    const hasMenuItems = order.items.some((item) => item.itemType === 'menu');
+    if (!hasMenuItems) {
+      throw new BadRequestException('Order has no menu items');
+    }
+
+    if (order.kitchenUserId) {
+      throw new BadRequestException(
+        'Kitchen user already assigned to this order',
+      );
+    }
+
+    order.kitchenUserId = targetUserId;
+    order.kitchenAssignedAt = new Date();
+
+    if (order.status === OrderStatus.CONFIRMED) {
+      order.status = OrderStatus.PREPARING;
+    }
+
+    return await this.orderRepository.save(order);
+  }
+
+  async assignWarehouseUser(
+    currentUser: User,
+    orderId: string,
+    userId?: number,
+  ): Promise<Order> {
+    if (
+      currentUser.role !== UserRole.WAREHOUSE &&
+      currentUser.role !== UserRole.ADMIN
+    ) {
+      throw new ForbiddenException('Only warehouse users can be assigned');
+    }
+
+    const targetUserId =
+      currentUser.role === UserRole.ADMIN ? userId : currentUser.id;
+
+    if (!targetUserId) {
+      throw new BadRequestException(
+        'userId is required when admin assigns a warehouse user',
+      );
+    }
+
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+      relations: { items: true, kitchenUser: true, warehouseUser: true },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (
+      order.status !== OrderStatus.CONFIRMED &&
+      order.status !== OrderStatus.PREPARING
+    ) {
+      throw new BadRequestException('Order must be confirmed or preparing');
+    }
+
+    const hasShopItems = order.items.some((item) => item.itemType === 'shop');
+    if (!hasShopItems) {
+      throw new BadRequestException('Order has no shop items');
+    }
+
+    if (order.warehouseUserId && order.warehouseUserId !== targetUserId) {
+      throw new BadRequestException(
+        'Warehouse user already assigned to this order',
+      );
+    }
+
+    order.warehouseUserId = targetUserId;
+    order.warehouseAssignedAt = new Date();
+
+    if (order.status === OrderStatus.CONFIRMED) {
+      order.status = OrderStatus.PREPARING;
+    }
+
+    return await this.orderRepository.save(order);
+  }
+
+  async markPrepared(
+    currentUser: User,
+    orderId: string,
+    role?: 'kitchen' | 'warehouse',
+  ): Promise<Order> {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+      relations: { items: true, kitchenUser: true, warehouseUser: true },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (order.status !== OrderStatus.PREPARING) {
+      throw new BadRequestException('Order must be in preparing status');
+    }
+
+    const hasMenuItems = order.items.some((item) => item.itemType === 'menu');
+    const hasShopItems = order.items.some((item) => item.itemType === 'shop');
+
+    let targetRole: 'kitchen' | 'warehouse';
+
+    if (currentUser.role === UserRole.ADMIN) {
+      if (!role) {
+        throw new BadRequestException(
+          'role is required when admin marks prepared',
+        );
+      }
+      targetRole = role;
+    } else if (currentUser.role === UserRole.KITCHEN) {
+      targetRole = 'kitchen';
+    } else if (currentUser.role === UserRole.WAREHOUSE) {
+      targetRole = 'warehouse';
+    } else {
+      throw new ForbiddenException('Insufficient permissions');
+    }
+
+    if (targetRole === 'kitchen') {
+      if (!hasMenuItems) {
+        throw new BadRequestException('Order has no menu items');
+      }
+      if (
+        order.kitchenUserId !== currentUser.id &&
+        currentUser.role !== UserRole.ADMIN
+      ) {
+        throw new ForbiddenException('You are not assigned to this order');
+      }
+      order.kitchenPreparedAt = new Date();
+    } else {
+      if (!hasShopItems) {
+        throw new BadRequestException('Order has no shop items');
+      }
+      if (
+        order.warehouseUserId !== currentUser.id &&
+        currentUser.role !== UserRole.ADMIN
+      ) {
+        throw new ForbiddenException('You are not assigned to this order');
+      }
+      order.warehousePreparedAt = new Date();
+    }
+
+    await this.orderRepository.save(order);
+
+    const kitchenDone = !hasMenuItems || order.kitchenPreparedAt !== null;
+    const warehouseDone = !hasShopItems || order.warehousePreparedAt !== null;
+
+    if (kitchenDone && warehouseDone) {
+      order.status = OrderStatus.WAITING_FOR_PICKUP;
+      await this.orderRepository.save(order);
+
+      try {
+        await this.notificationsService.sendOrderStatusNotification(
+          order.customerId,
+          order.id,
+          OrderStatus.WAITING_FOR_PICKUP,
+        );
+      } catch (error) {
+        console.error('Failed to send order status notification:', error);
+      }
+    }
+
+    return (await this.orderRepository.findOne({
+      where: { id: orderId },
+    })) as Order;
   }
 }

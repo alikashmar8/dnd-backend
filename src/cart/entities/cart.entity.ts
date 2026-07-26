@@ -10,6 +10,7 @@ import {
 import { CartItem } from './cart-item.entity';
 
 @Entity('carts')
+@Index(['userId', 'active'], { unique: true, where: 'active = true' })
 export class Cart {
   @PrimaryGeneratedColumn('increment')
   id!: number;

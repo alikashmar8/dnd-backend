@@ -9,6 +9,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Cart } from './cart.entity';
+import { MenuItem } from '../../menu/entities/menu-item.entity';
 import { ShopItem } from '../../shop-items/entities/shop-item.entity';
 
 @Entity('cart_items')
@@ -22,7 +23,10 @@ export class CartItem {
 
   @Column({ type: 'int' })
   @Index()
-  productId!: number;
+  itemId!: number;
+
+  @Column({ type: 'varchar', length: 10 })
+  itemType!: 'menu' | 'shop';
 
   @Column({ type: 'int' })
   quantity!: number;
@@ -40,7 +44,10 @@ export class CartItem {
   @JoinColumn({ name: 'cartId' })
   cart!: Cart;
 
-  @ManyToOne(() => ShopItem, { eager: true, onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'productId' })
-  product!: ShopItem;
+  // Virtual relations for conditional loading via QueryBuilder (no @JoinColumn to avoid duplicate FKs)
+  @ManyToOne(() => MenuItem, { nullable: true })
+  menuItem!: MenuItem | null;
+
+  @ManyToOne(() => ShopItem, { nullable: true })
+  shopItem!: ShopItem | null;
 }

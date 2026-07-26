@@ -26,6 +26,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { StorageModule } from './storage/storage.module';
 import { FilesModule } from './files/files.module';
 import { PasswordResetModule } from './password-reset/password-reset.module';
+import { AdsModule } from './ads/ads.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { PasswordResetModule } from './password-reset/password-reset.module';
     StorageModule,
     FilesModule,
     PasswordResetModule,
+    AdsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

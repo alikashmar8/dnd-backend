@@ -16,6 +16,9 @@ export class ShopCategory {
   @Column({ type: 'varchar', length: 100 })
   name!: string;
 
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  nameAr?: string | null;
+
   @Column({ type: 'varchar', length: 500, nullable: true })
   image!: string | null;
 

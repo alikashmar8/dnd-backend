@@ -1,11 +1,14 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { ModuleRef } from '@nestjs/core';
+import { DataSource, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User } from '../users/entities/user.entity';
 import { UserRole } from '../enums/user-role.enum';
 import { DeviceToken, DeviceTokenStatus } from './entities/device-token.entity';
 import { RegisterDto, LoginDto } from './auth.dto';
+import { ChatService } from '../chat/chat.service';
+import { ChatMessage } from '../chat/entities/chat-message.entity';
 
 @Injectable()
 export class AuthService {
@@ -14,6 +17,8 @@ export class AuthService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(DeviceToken)
     private readonly deviceTokenRepository: Repository<DeviceToken>,
+    private readonly dataSource: DataSource,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async register(registerDto: RegisterDto, deviceInfo?: string) {
@@ -25,40 +30,69 @@ export class AuthService {
       throw new UnauthorizedException('Phone number already exists');
     }
 
-    const hashedPassword = await bcrypt.hash(registerDto.password, 10);
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    const user = this.userRepository.create({
-      email: registerDto.email || undefined,
-      passwordHash: hashedPassword,
-      name: registerDto.name,
-      phone: registerDto.phone,
-      role: UserRole.CUSTOMER,
-    });
+    try {
+      const manager = queryRunner.manager;
 
-    await this.userRepository.save(user);
+      const hashedPassword = await bcrypt.hash(registerDto.password, 10);
 
-    const accessToken = this.generateAccessToken();
-    const deviceToken = this.deviceTokenRepository.create({
-      userId: user.id,
-      accessToken,
-      deviceInfo: deviceInfo || null,
-      fcmToken: registerDto.fcmToken || null,
-      status: DeviceTokenStatus.ACTIVE,
-      lastUsedAt: new Date(),
-    });
+      const user = manager.create(User, {
+        email: registerDto.email || undefined,
+        passwordHash: hashedPassword,
+        name: registerDto.name,
+        phone: registerDto.phone,
+        role: UserRole.CUSTOMER,
+      });
+      await manager.save(user);
 
-    await this.deviceTokenRepository.save(deviceToken);
+      const accessToken = this.generateAccessToken();
+      const deviceToken = manager.create(DeviceToken, {
+        userId: user.id,
+        accessToken,
+        deviceInfo: deviceInfo || null,
+        fcmToken: registerDto.fcmToken || null,
+        status: DeviceTokenStatus.ACTIVE,
+        lastUsedAt: new Date(),
+      });
+      await manager.save(deviceToken);
 
-    return {
-      access_token: accessToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        phone: user.phone,
-        role: user.role,
-      },
-    };
+      const chatService = this.moduleRef.get(ChatService, { strict: false });
+      const supportUser = await chatService.findSupportTeamUser();
+      const chat = await chatService.getOrCreateThreadWithManager(
+        user.id,
+        supportUser.id,
+        manager,
+      );
+
+      const welcomeMessage = manager.create(ChatMessage, {
+        chatId: chat.id,
+        senderId: supportUser.id,
+        text: 'Welcome to Dish & Dash! How can we help you today?',
+        isRead: false,
+      });
+      await manager.save(welcomeMessage);
+
+      await queryRunner.commitTransaction();
+
+      return {
+        access_token: accessToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          phone: user.phone,
+          role: user.role,
+        },
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   async login(loginDto: LoginDto, deviceInfo?: string) {

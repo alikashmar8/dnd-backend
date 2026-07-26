@@ -17,6 +17,8 @@ import { UserRole } from '../enums/user-role.enum';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { OrdersQueryDto } from './dto/orders-query.dto';
+import { AssignUserDto } from './dto/assign-user.dto';
+import { MarkPreparedDto } from './dto/mark-prepared.dto';
 import { User } from '../users/entities/user.entity';
 
 @Controller('orders')
@@ -73,5 +75,46 @@ export class OrdersController {
       id,
       body.driverId,
     );
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.KITCHEN, UserRole.ADMIN)
+  @Patch(':id/assign-kitchen')
+  async assignKitchenUser(
+    @CurrentUser() currentUser: User,
+    @Param('id') id: string,
+    @Body() dto: AssignUserDto,
+  ) {
+    return await this.ordersService.assignKitchenUser(
+      currentUser,
+      id,
+      dto.userId,
+    );
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.WAREHOUSE, UserRole.ADMIN)
+  @Patch(':id/assign-warehouse')
+  async assignWarehouseUser(
+    @CurrentUser() currentUser: User,
+    @Param('id') id: string,
+    @Body() dto: AssignUserDto,
+  ) {
+    return await this.ordersService.assignWarehouseUser(
+      currentUser,
+      id,
+      dto.userId,
+    );
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.KITCHEN, UserRole.WAREHOUSE, UserRole.ADMIN)
+  @Patch(':id/mark-prepared')
+  async markPrepared(
+    @CurrentUser() currentUser: User,
+    @Param('id') id: string,
+    @Body() dto: MarkPreparedDto,
+  ) {
+    return await this.ordersService.markPrepared(currentUser, id, dto.role);
   }
 }

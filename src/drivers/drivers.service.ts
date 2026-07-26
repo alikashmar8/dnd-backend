@@ -5,8 +5,8 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Order } from '../orders/entities/order.entity';
 import { OrderStatus } from '../enums/order-status.enum';
+import { Order } from '../orders/entities/order.entity';
 
 @Injectable()
 export class DriversService {
@@ -21,7 +21,6 @@ export class DriversService {
       relations: {
         items: true,
         address: true,
-        restaurant: true,
         customer: true,
       },
       order: { createdAt: 'DESC' },
@@ -45,9 +44,10 @@ export class DriversService {
 
     const validTransitions: Record<OrderStatus, OrderStatus[]> = {
       [OrderStatus.PENDING]: [],
-      [OrderStatus.CONFIRMED]: [OrderStatus.OUT_FOR_DELIVERY],
-      [OrderStatus.PREPARING]: [OrderStatus.OUT_FOR_DELIVERY],
-      [OrderStatus.OUT_FOR_DELIVERY]: [OrderStatus.DELIVERED],
+      [OrderStatus.CONFIRMED]: [],
+      [OrderStatus.PREPARING]: [],
+      [OrderStatus.WAITING_FOR_PICKUP]: [OrderStatus.IN_ROUTE],
+      [OrderStatus.IN_ROUTE]: [OrderStatus.DELIVERED],
       [OrderStatus.DELIVERED]: [],
       [OrderStatus.COMPLETED]: [],
       [OrderStatus.CANCELLED]: [],
@@ -68,7 +68,6 @@ export class DriversService {
       relations: {
         items: true,
         address: true,
-        restaurant: true,
         customer: true,
       },
     });

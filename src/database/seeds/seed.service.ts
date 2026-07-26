@@ -10,10 +10,11 @@ import { MenuCategory } from '../../menu/entities/menu-category.entity';
 import { MenuItem } from '../../menu/entities/menu-item.entity';
 import { ShopItem } from '../../shop-items/entities/shop-item.entity';
 import { ShopCategory } from '../../shop-items/entities/shop-category.entity';
-import { Order, OrderSource } from '../../orders/entities/order.entity';
+import { Order } from '../../orders/entities/order.entity';
 import { OrderItem } from '../../orders/entities/order-item.entity';
 import { OrderStatus } from '../../enums/order-status.enum';
 import { MealType } from '../../enums/meal-type.enum';
+import { Ad } from '../../ads/entities/ad.entity';
 
 @Injectable()
 export class SeedService {
@@ -36,6 +37,8 @@ export class SeedService {
     private readonly orderRepository: Repository<Order>,
     @InjectRepository(OrderItem)
     private readonly orderItemRepository: Repository<OrderItem>,
+    @InjectRepository(Ad)
+    private readonly adRepository: Repository<Ad>,
   ) {}
 
   async seed() {
@@ -79,7 +82,29 @@ export class SeedService {
       role: UserRole.ADMIN,
     });
 
-    await this.userRepository.save([customer, driver, admin]);
+    const kitchen = this.userRepository.create({
+      email: 'kitchen@example.com',
+      passwordHash: hashedPassword,
+      name: 'Kitchen Staff',
+      phone: '+96172222222',
+      role: UserRole.KITCHEN,
+    });
+
+    const warehouse = this.userRepository.create({
+      email: 'warehouse@example.com',
+      passwordHash: hashedPassword,
+      name: 'Warehouse Staff',
+      phone: '+96173333333',
+      role: UserRole.WAREHOUSE,
+    });
+
+    await this.userRepository.save([
+      customer,
+      driver,
+      admin,
+      kitchen,
+      warehouse,
+    ]);
     console.log('✓ Users seeded');
 
     // Seed Addresses
@@ -299,8 +324,6 @@ export class SeedService {
     const order1 = this.orderRepository.create({
       id: 'ORD-20260701-001',
       customerId: customer.id,
-      source: OrderSource.RESTAURANT,
-      restaurantId: restaurant1.id,
       status: OrderStatus.PENDING,
       addressId: address1.id,
       etaMinutes: 35,
@@ -314,8 +337,6 @@ export class SeedService {
     const order2 = this.orderRepository.create({
       id: 'ORD-20260701-002',
       customerId: customer.id,
-      source: OrderSource.RESTAURANT,
-      restaurantId: restaurant2.id,
       status: OrderStatus.CONFIRMED,
       addressId: address1.id,
       etaMinutes: 35,
@@ -329,10 +350,10 @@ export class SeedService {
     const order3 = this.orderRepository.create({
       id: 'ORD-20260702-001',
       customerId: customer.id,
-      source: OrderSource.RESTAURANT,
-      restaurantId: restaurant1.id,
       status: OrderStatus.PREPARING,
       driverId: driver.id,
+      kitchenUserId: kitchen.id,
+      kitchenAssignedAt: new Date('2026-07-02T18:05:00Z'),
       addressId: address2.id,
       etaMinutes: 35,
       subtotal: 32.97,
@@ -345,10 +366,11 @@ export class SeedService {
     const order4 = this.orderRepository.create({
       id: 'ORD-20260702-002',
       customerId: customer.id,
-      source: OrderSource.RESTAURANT,
-      restaurantId: restaurant2.id,
-      status: OrderStatus.OUT_FOR_DELIVERY,
+      status: OrderStatus.IN_ROUTE,
       driverId: driver.id,
+      kitchenUserId: kitchen.id,
+      kitchenAssignedAt: new Date('2026-07-02T19:05:00Z'),
+      kitchenPreparedAt: new Date('2026-07-02T19:30:00Z'),
       addressId: address1.id,
       etaMinutes: 35,
       subtotal: 23.98,
@@ -361,7 +383,6 @@ export class SeedService {
     const order5 = this.orderRepository.create({
       id: 'ORD-20260703-001',
       customerId: customer.id,
-      source: OrderSource.SHOP,
       status: OrderStatus.DELIVERED,
       driverId: driver.id,
       addressId: address2.id,
@@ -376,8 +397,6 @@ export class SeedService {
     const order6 = this.orderRepository.create({
       id: 'ORD-20260703-002',
       customerId: customer.id,
-      source: OrderSource.RESTAURANT,
-      restaurantId: restaurant1.id,
       status: OrderStatus.COMPLETED,
       driverId: driver.id,
       addressId: address1.id,
@@ -392,7 +411,6 @@ export class SeedService {
     const order7 = this.orderRepository.create({
       id: 'ORD-20260704-001',
       customerId: customer.id,
-      source: OrderSource.SHOP,
       status: OrderStatus.CANCELLED,
       addressId: address1.id,
       etaMinutes: 45,
@@ -419,6 +437,7 @@ export class SeedService {
       {
         orderId: order1.id,
         itemId: menuItem1.id.toString(),
+        itemType: 'menu',
         name: menuItem1.name,
         price: menuItem1.price,
         quantity: 1,
@@ -427,6 +446,7 @@ export class SeedService {
       {
         orderId: order1.id,
         itemId: menuItem2.id.toString(),
+        itemType: 'menu',
         name: menuItem2.name,
         price: menuItem2.price,
         quantity: 1,
@@ -438,6 +458,7 @@ export class SeedService {
       {
         orderId: order2.id,
         itemId: menuItem4.id.toString(),
+        itemType: 'menu',
         name: menuItem4.name,
         price: menuItem4.price,
         quantity: 1,
@@ -449,6 +470,7 @@ export class SeedService {
       {
         orderId: order3.id,
         itemId: menuItem1.id.toString(),
+        itemType: 'menu',
         name: menuItem1.name,
         price: menuItem1.price,
         quantity: 2,
@@ -457,6 +479,7 @@ export class SeedService {
       {
         orderId: order3.id,
         itemId: menuItem3.id.toString(),
+        itemType: 'menu',
         name: menuItem3.name,
         price: menuItem3.price,
         quantity: 1,
@@ -468,6 +491,7 @@ export class SeedService {
       {
         orderId: order4.id,
         itemId: menuItem3.id.toString(),
+        itemType: 'menu',
         name: menuItem3.name,
         price: menuItem3.price,
         quantity: 2,
@@ -476,6 +500,7 @@ export class SeedService {
       {
         orderId: order4.id,
         itemId: menuItem4.id.toString(),
+        itemType: 'menu',
         name: menuItem4.name,
         price: menuItem4.price,
         quantity: 1,
@@ -487,6 +512,7 @@ export class SeedService {
       {
         orderId: order5.id,
         itemId: shopItem1.id.toString(),
+        itemType: 'shop',
         name: shopItem1.name,
         price: shopItem1.price,
         quantity: 2,
@@ -495,6 +521,7 @@ export class SeedService {
       {
         orderId: order5.id,
         itemId: shopItem2.id.toString(),
+        itemType: 'shop',
         name: shopItem2.name,
         price: shopItem2.price,
         quantity: 1,
@@ -506,6 +533,7 @@ export class SeedService {
       {
         orderId: order6.id,
         itemId: menuItem1.id.toString(),
+        itemType: 'menu',
         name: menuItem1.name,
         price: menuItem1.price,
         quantity: 1,
@@ -514,6 +542,7 @@ export class SeedService {
       {
         orderId: order6.id,
         itemId: menuItem2.id.toString(),
+        itemType: 'menu',
         name: menuItem2.name,
         price: menuItem2.price,
         quantity: 2,
@@ -525,6 +554,7 @@ export class SeedService {
       {
         orderId: order7.id,
         itemId: shopItem3.id.toString(),
+        itemType: 'shop',
         name: shopItem3.name,
         price: shopItem3.price,
         quantity: 1,
@@ -533,6 +563,7 @@ export class SeedService {
       {
         orderId: order7.id,
         itemId: shopItem4.id.toString(),
+        itemType: 'shop',
         name: shopItem4.name,
         price: shopItem4.price,
         quantity: 1,
@@ -550,6 +581,38 @@ export class SeedService {
       ...order7Items,
     ]);
     console.log('✓ Order items seeded');
+
+    // Seed Ads
+    const ad1 = this.adRepository.create({
+      title: 'Weekend Feast Deals',
+      subtitle: 'Up to 30% off on curated homemade platters',
+      image:
+        'https://images.unsplash.com/photo-1559847844-5315695dadae?auto=format&fit=crop&w=1200&q=80',
+      sortOrder: 1,
+      isActive: true,
+    });
+
+    const ad2 = this.adRepository.create({
+      title: 'Fresh Market Restock',
+      subtitle: 'Organic produce delivered in under 45 minutes',
+      image:
+        'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1200&q=80',
+      sortOrder: 2,
+      isActive: true,
+    });
+
+    const ad3 = this.adRepository.create({
+      title: 'Midnight Cravings',
+      subtitle:
+        'Late-night comfort meals and sweet bites, still hot on arrival',
+      image:
+        'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=1200&q=80',
+      sortOrder: 3,
+      isActive: true,
+    });
+
+    await this.adRepository.save([ad1, ad2, ad3]);
+    console.log('✓ Ads seeded');
 
     console.log('Database seeding completed successfully!');
   }

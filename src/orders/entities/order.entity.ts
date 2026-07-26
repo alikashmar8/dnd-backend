@@ -11,14 +11,8 @@ import {
 
 import { Address } from '../../addresses/entities/address.entity';
 import { OrderStatus } from '../../enums/order-status.enum';
-import { Restaurant } from '../../restaurants/entities/restaurant.entity';
 import { User } from '../../users/entities/user.entity';
 import { OrderItem } from './order-item.entity';
-
-export enum OrderSource {
-  RESTAURANT = 'restaurant',
-  SHOP = 'shop',
-}
 
 @Entity('orders')
 export class Order {
@@ -30,12 +24,6 @@ export class Order {
 
   @Column({ type: 'int', nullable: true })
   createdById!: number | null;
-
-  @Column({ type: 'enum', enum: OrderSource })
-  source!: OrderSource;
-
-  @Column({ type: 'int', nullable: true })
-  restaurantId!: number | null;
 
   @Column({
     type: 'enum',
@@ -71,6 +59,24 @@ export class Order {
   @Column({ type: 'int', nullable: true })
   driverId!: number | null;
 
+  @Column({ type: 'int', nullable: true })
+  kitchenUserId!: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  warehouseUserId!: number | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  kitchenAssignedAt!: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  kitchenPreparedAt!: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  warehouseAssignedAt!: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  warehousePreparedAt!: Date | null;
+
   @CreateDateColumn({})
   createdAt!: Date;
 
@@ -91,11 +97,13 @@ export class Order {
   @JoinColumn({ name: 'driverId', referencedColumnName: 'id' })
   driver!: User | null;
 
-  @ManyToOne(() => Restaurant, (restaurant) => restaurant.orders, {
-    nullable: true,
-  })
-  @JoinColumn({})
-  restaurant!: Restaurant | null;
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'kitchenUserId', referencedColumnName: 'id' })
+  kitchenUser!: User | null;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'warehouseUserId', referencedColumnName: 'id' })
+  warehouseUser!: User | null;
 
   @ManyToOne(() => Address, { onDelete: 'SET NULL' })
   @JoinColumn({})
