@@ -32,4 +32,9 @@ export class GetMenuItemsQueryDto extends PaginationDto {
   @Type(() => Number)
   @IsInt()
   restaurantId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  categoryId?: number;
 }

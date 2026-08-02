@@ -2,6 +2,8 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
@@ -25,6 +27,9 @@ export class ShopCategory {
   @Column({ type: 'int', default: 0 })
   sortOrder!: number;
 
+  @Column({ type: 'int', nullable: true })
+  parentId!: number | null;
+
   @CreateDateColumn({})
   createdAt!: Date;
 
@@ -35,4 +40,17 @@ export class ShopCategory {
 
   @OneToMany(() => ShopItem, (item) => item.category)
   shopItems!: ShopItem[];
+
+  @ManyToOne(() => ShopCategory, (category) => category.children, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'parentId' })
+  parent?: ShopCategory | null;
+
+  @OneToMany(() => ShopCategory, (category) => category.parent)
+  children?: ShopCategory[];
+
+  /* ── Computed (not persisted) ───────────────────────────── */
+  itemCount?: number;
 }

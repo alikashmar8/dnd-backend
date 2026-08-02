@@ -14,7 +14,15 @@ import { UpdateCartItemDto } from './dto/update-cart-item.dto';
 import { Order } from '../orders/entities/order.entity';
 import { OrderItem } from '../orders/entities/order-item.entity';
 import { Address } from '../addresses/entities/address.entity';
+import { computeOrderFees, roundMoney } from '../common/constants/pricing';
 import { OrdersService } from '../orders/orders.service';
+
+export interface CartSummary {
+  subtotal: number;
+  tax: number;
+  deliveryFee: number;
+  total: number;
+}
 
 @Injectable()
 export class CartService {
@@ -58,6 +66,39 @@ export class CartService {
 
       return await manager.save(newCart);
     });
+  }
+
+  async getActiveCartDetails(currentUserId: number) {
+    const cart = await this.getActiveCart(currentUserId);
+
+    const items = await this.cartItemRepository
+      .createQueryBuilder('cartItem')
+      .leftJoinAndMapOne(
+        'cartItem.menuItem',
+        MenuItem,
+        'menuItem',
+        'cartItem.itemType = :menuType AND cartItem.itemId = menuItem.id',
+        { menuType: 'menu' },
+      )
+      .leftJoinAndMapOne(
+        'cartItem.shopItem',
+        ShopItem,
+        'shopItem',
+        'cartItem.itemType = :shopType AND cartItem.itemId = shopItem.id',
+        { shopType: 'shop' },
+      )
+      .where('cartItem.cartId = :cartId', { cartId: cart.id })
+      .orderBy('cartItem.createdAt', 'DESC')
+      .getMany();
+
+    return {
+      ...cart,
+      items: items.map((item) => ({
+        ...item,
+        lineTotal: roundMoney(Number(item.price) * item.quantity),
+      })),
+      summary: this.buildSummary(items),
+    };
   }
 
   async addItemToCart(
@@ -188,21 +229,29 @@ export class CartService {
   async listCartItems(
     currentUserId: number,
     pagination: { skip?: number; take?: number },
-  ): Promise<{ items: CartItem[]; total: number; skip: number; take: number }> {
+  ): Promise<{
+    items: Array<CartItem & { lineTotal: number }>;
+    total: number;
+    skip: number;
+    take: number;
+    summary: CartSummary;
+  }> {
     const cart = await this.getActiveCart(currentUserId);
     const skip = pagination.skip ?? 0;
     const take = pagination.take ?? 20;
 
-    const [items, total] = await this.cartItemRepository
+    const [pageItems, total] = await this.cartItemRepository
       .createQueryBuilder('cartItem')
-      .leftJoinAndSelect(
+      .leftJoinAndMapOne(
         'cartItem.menuItem',
+        MenuItem,
         'menuItem',
         'cartItem.itemType = :menuType AND cartItem.itemId = menuItem.id',
         { menuType: 'menu' },
       )
-      .leftJoinAndSelect(
+      .leftJoinAndMapOne(
         'cartItem.shopItem',
+        ShopItem,
         'shopItem',
         'cartItem.itemType = :shopType AND cartItem.itemId = shopItem.id',
         { shopType: 'shop' },
@@ -213,7 +262,27 @@ export class CartService {
       .take(take)
       .getManyAndCount();
 
-    return { items, total, skip, take };
+    const allItems = await this.cartItemRepository.find({
+      where: { cartId: cart.id },
+    });
+
+    return {
+      items: pageItems.map((item) => ({
+        ...item,
+        lineTotal: roundMoney(Number(item.price) * item.quantity),
+      })),
+      total,
+      skip,
+      take,
+      summary: this.buildSummary(allItems),
+    };
+  }
+
+  private buildSummary(items: CartItem[]): CartSummary {
+    const subtotal = roundMoney(
+      items.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0),
+    );
+    return { subtotal, ...computeOrderFees(subtotal) };
   }
 
   async checkoutCart(currentUserId: number, addressId: number): Promise<Order> {

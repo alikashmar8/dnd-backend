@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { ShopItem } from './entities/shop-item.entity';
@@ -40,6 +44,15 @@ export class ShopItemsService {
     if (query.category) {
       qb.andWhere('LOWER(category.name) = LOWER(:category)', {
         category: query.category,
+      });
+    }
+
+    if (query.categoryId) {
+      const categoryIds = await this.collectCategoryAndDescendants(
+        query.categoryId,
+      );
+      qb.andWhere('item.categoryId IN (:...categoryIds)', {
+        categoryIds,
       });
     }
 
@@ -130,14 +143,44 @@ export class ShopItemsService {
     await this.shopItemRepository.remove(item);
   }
 
-  async findCategories() {
-    return this.shopCategoryRepository.find({
-      order: { name: 'ASC' },
+  async findCategories(): Promise<ShopCategory[]> {
+    const categories = await this.shopCategoryRepository.find({
+      select: {
+        id: true,
+        name: true,
+        nameAr: true,
+        sortOrder: true,
+        image: true,
+        parentId: true,
+      },
     });
+
+    const countRows = await this.shopItemRepository
+      .createQueryBuilder('item')
+      .select('item.categoryId', 'categoryId')
+      .addSelect('COUNT(*)', 'count')
+      .groupBy('item.categoryId')
+      .getRawMany<{ categoryId: string | number; count: string | number }>();
+
+    const countByCategory = new Map<number, number>();
+    for (const row of countRows) {
+      countByCategory.set(Number(row.categoryId), Number(row.count));
+    }
+
+    const tree = this.buildCategoryTree(categories);
+    this.attachItemCounts(tree, countByCategory);
+    return tree;
   }
 
   async createCategory(dto: CreateShopCategoryDto): Promise<ShopCategory> {
-    const category = this.shopCategoryRepository.create(dto);
+    if (dto.parentId) {
+      await this.assertCategoryExists(dto.parentId);
+    }
+
+    const category = this.shopCategoryRepository.create({
+      ...dto,
+      parentId: dto.parentId ?? null,
+    });
     return this.shopCategoryRepository.save(category);
   }
 
@@ -149,6 +192,12 @@ export class ShopItemsService {
       where: { id },
     });
     if (!category) throw new NotFoundException('Shop category not found');
+
+    if (dto.parentId !== undefined && dto.parentId !== null) {
+      await this.assertCategoryExists(dto.parentId);
+      await this.assertNoCycle(id, dto.parentId);
+    }
+
     Object.assign(category, dto);
     return this.shopCategoryRepository.save(category);
   }
@@ -156,8 +205,120 @@ export class ShopItemsService {
   async deleteCategory(id: number): Promise<void> {
     const category = await this.shopCategoryRepository.findOne({
       where: { id },
+      relations: { children: true },
     });
     if (!category) throw new NotFoundException('Shop category not found');
+
+    if (category.children && category.children.length > 0) {
+      throw new BadRequestException(
+        'Cannot delete a category that has subcategories. Delete or move its subcategories first.',
+      );
+    }
+
     await this.shopCategoryRepository.remove(category);
+  }
+
+  private async assertCategoryExists(id: number): Promise<void> {
+    const exists = await this.shopCategoryRepository.exists({
+      where: { id },
+    });
+    if (!exists) throw new NotFoundException('Shop category not found');
+  }
+
+  private async assertNoCycle(id: number, parentId: number): Promise<void> {
+    if (id === parentId) {
+      throw new BadRequestException('A category cannot be its own parent');
+    }
+
+    let currentParentId: number | null = parentId;
+    const seen = new Set<number>();
+
+    while (currentParentId !== null && currentParentId !== undefined) {
+      if (currentParentId === id) {
+        throw new BadRequestException(
+          'Cannot move a category under one of its own subcategories',
+        );
+      }
+      if (seen.has(currentParentId)) {
+        break;
+      }
+      seen.add(currentParentId);
+
+      const parent = await this.shopCategoryRepository.findOne({
+        where: { id: currentParentId },
+        select: { id: true, parentId: true },
+      });
+      if (!parent) break;
+      currentParentId = parent.parentId ?? null;
+    }
+  }
+
+  private async collectCategoryAndDescendants(id: number): Promise<number[]> {
+    const categories = await this.shopCategoryRepository.find({
+      select: { id: true, parentId: true },
+    });
+
+    const ids = new Set<number>([id]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const category of categories) {
+        if (
+          category.parentId !== null &&
+          category.parentId !== undefined &&
+          ids.has(category.parentId) &&
+          !ids.has(category.id)
+        ) {
+          ids.add(category.id);
+          changed = true;
+        }
+      }
+    }
+
+    return [...ids];
+  }
+
+  private buildCategoryTree(categories: ShopCategory[]): ShopCategory[] {
+    const nodes = new Map<number, ShopCategory>();
+    const roots: ShopCategory[] = [];
+
+    for (const category of categories) {
+      nodes.set(category.id, { ...category, children: [] });
+    }
+
+    for (const node of nodes.values()) {
+      if (node.parentId && nodes.has(node.parentId)) {
+        nodes.get(node.parentId)!.children!.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+
+    this.sortCategoryTree(roots);
+    return roots;
+  }
+
+  private sortCategoryTree(nodes: ShopCategory[]): void {
+    nodes.sort(
+      (a, b) =>
+        a.sortOrder - b.sortOrder || (a.name ?? '').localeCompare(b.name ?? ''),
+    );
+    for (const node of nodes) {
+      if (node.children?.length) {
+        this.sortCategoryTree(node.children);
+      }
+    }
+  }
+
+  private attachItemCounts(
+    nodes: ShopCategory[],
+    countByCategory: Map<number, number>,
+  ): void {
+    for (const node of nodes) {
+      node.itemCount = countByCategory.get(node.id) ?? 0;
+      if (node.children?.length) {
+        this.attachItemCounts(node.children, countByCategory);
+      }
+    }
   }
 }

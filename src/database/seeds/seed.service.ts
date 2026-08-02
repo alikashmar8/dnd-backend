@@ -82,6 +82,14 @@ export class SeedService {
       role: UserRole.ADMIN,
     });
 
+    const support = this.userRepository.create({
+      email: 'support@example.com',
+      passwordHash: hashedPassword,
+      name: 'Support Team',
+      phone: '+96178999999',
+      role: UserRole.SUPPORT,
+    });
+
     const kitchen = this.userRepository.create({
       email: 'kitchen@example.com',
       passwordHash: hashedPassword,
@@ -102,6 +110,7 @@ export class SeedService {
       customer,
       driver,
       admin,
+      support,
       kitchen,
       warehouse,
     ]);
@@ -169,31 +178,50 @@ export class SeedService {
     await this.restaurantRepository.save([restaurant1, restaurant2]);
     console.log('✓ Restaurants seeded');
 
-    // Seed Menu Categories (shared)
+    // Seed Menu Categories (shared, multi-level)
     const category1 = this.menuCategoryRepository.create({
       name: 'Pizzas',
       sortOrder: 1,
       image: 'https://example.com/pizzas.jpg',
+      parentId: null,
     });
 
     const category2 = this.menuCategoryRepository.create({
       name: 'Sides',
       sortOrder: 2,
       image: 'https://example.com/sides.jpg',
+      parentId: null,
     });
 
     const category3 = this.menuCategoryRepository.create({
       name: 'Main Courses',
       sortOrder: 3,
       image: 'https://example.com/main-courses.jpg',
+      parentId: null,
     });
 
     await this.menuCategoryRepository.save([category1, category2, category3]);
+
+    const category1Child = this.menuCategoryRepository.create({
+      name: 'Specialty Pizzas',
+      sortOrder: 1,
+      image: 'https://example.com/specialty-pizzas.jpg',
+      parentId: category1.id,
+    });
+
+    const category3Child = this.menuCategoryRepository.create({
+      name: 'Seafood',
+      sortOrder: 1,
+      image: 'https://example.com/seafood.jpg',
+      parentId: category3.id,
+    });
+
+    await this.menuCategoryRepository.save([category1Child, category3Child]);
     console.log('✓ Menu categories seeded');
 
     // Seed Menu Items
     const menuItem1 = this.menuItemRepository.create({
-      categoryId: category1.id,
+      categoryId: category1Child.id,
       name: 'Margherita Pizza',
       description: 'Classic tomato and mozzarella pizza',
       price: 12.99,
@@ -204,7 +232,7 @@ export class SeedService {
     });
 
     const menuItem2 = this.menuItemRepository.create({
-      categoryId: category1.id,
+      categoryId: category1Child.id,
       name: 'Pepperoni Pizza',
       description: 'Pepperoni and cheese pizza',
       price: 14.99,
@@ -226,7 +254,7 @@ export class SeedService {
     });
 
     const menuItem4 = this.menuItemRepository.create({
-      categoryId: category3.id,
+      categoryId: category3Child.id,
       name: 'Grilled Salmon',
       description: 'Fresh grilled salmon with vegetables',
       price: 18.99,
@@ -244,23 +272,26 @@ export class SeedService {
     ]);
     console.log('✓ Menu items seeded');
 
-    // Seed Shop Categories
+    // Seed Shop Categories (multi-level)
     const shopCategory1 = this.shopCategoryRepository.create({
       name: 'Dairy',
       image: 'https://example.com/dairy.jpg',
       sortOrder: 1,
+      parentId: null,
     });
 
     const shopCategory2 = this.shopCategoryRepository.create({
       name: 'Bakery',
       image: 'https://example.com/bakery.jpg',
       sortOrder: 2,
+      parentId: null,
     });
 
     const shopCategory3 = this.shopCategoryRepository.create({
       name: 'Fruits',
       image: 'https://example.com/fruits.jpg',
       sortOrder: 3,
+      parentId: null,
     });
 
     await this.shopCategoryRepository.save([
@@ -268,11 +299,30 @@ export class SeedService {
       shopCategory2,
       shopCategory3,
     ]);
+
+    const shopCategory1Child = this.shopCategoryRepository.create({
+      name: 'Milk & Eggs',
+      image: 'https://example.com/milk-eggs.jpg',
+      sortOrder: 1,
+      parentId: shopCategory1.id,
+    });
+
+    const shopCategory3Child = this.shopCategoryRepository.create({
+      name: 'Citrus',
+      image: 'https://example.com/citrus.jpg',
+      sortOrder: 1,
+      parentId: shopCategory3.id,
+    });
+
+    await this.shopCategoryRepository.save([
+      shopCategory1Child,
+      shopCategory3Child,
+    ]);
     console.log('✓ Shop categories seeded');
 
     // Seed Shop Items
     const shopItem1 = this.shopItemRepository.create({
-      categoryId: shopCategory1.id,
+      categoryId: shopCategory1Child.id,
       name: 'Organic Milk',
       description: 'Fresh organic whole milk',
       price: 4.99,
@@ -292,7 +342,7 @@ export class SeedService {
     });
 
     const shopItem3 = this.shopItemRepository.create({
-      categoryId: shopCategory1.id,
+      categoryId: shopCategory1Child.id,
       name: 'Fresh Eggs',
       description: 'Farm fresh eggs (dozen)',
       price: 5.99,
@@ -302,7 +352,7 @@ export class SeedService {
     });
 
     const shopItem4 = this.shopItemRepository.create({
-      categoryId: shopCategory3.id,
+      categoryId: shopCategory3Child.id,
       name: 'Organic Apples',
       description: 'Fresh organic apples',
       price: 6.99,

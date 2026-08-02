@@ -65,6 +65,7 @@ export class AuthService {
         user.id,
         supportUser.id,
         manager,
+        'support',
       );
 
       const welcomeMessage = manager.create(ChatMessage, {
@@ -124,6 +125,19 @@ export class AuthService {
     });
 
     await this.deviceTokenRepository.save(deviceToken);
+
+    // Customers always have a support thread: new registrations get one, and
+    // existing accounts (created before support threads existed) get one lazily
+    // here. Idempotent get-or-create, so it is a no-op once it exists.
+    if (user.role === UserRole.CUSTOMER) {
+      try {
+        const chatService = this.moduleRef.get(ChatService, { strict: false });
+        const supportUser = await chatService.findSupportTeamUser();
+        await chatService.getOrCreateThread(user.id, supportUser.id, 'support');
+      } catch (error) {
+        console.error('Failed to ensure support thread on login:', error);
+      }
+    }
 
     return {
       access_token: accessToken,

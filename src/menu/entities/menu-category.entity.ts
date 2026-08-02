@@ -2,6 +2,8 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
@@ -25,6 +27,9 @@ export class MenuCategory {
   @Column({ type: 'varchar', length: 500, nullable: true })
   image!: string | null;
 
+  @Column({ type: 'int', nullable: true })
+  parentId!: number | null;
+
   @CreateDateColumn({})
   createdAt!: Date;
 
@@ -35,4 +40,17 @@ export class MenuCategory {
 
   @OneToMany(() => MenuItem, (item) => item.category)
   menuItems!: MenuItem[];
+
+  @ManyToOne(() => MenuCategory, (category) => category.children, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'parentId' })
+  parent?: MenuCategory | null;
+
+  @OneToMany(() => MenuCategory, (category) => category.parent)
+  children?: MenuCategory[];
+
+  /* ── Computed (not persisted) ───────────────────────────── */
+  itemCount?: number;
 }

@@ -1,3 +1,6 @@
+// Middleware
+export { RequestLoggerMiddleware } from './middleware/request-logger.middleware';
+
 // Decorators
 export { CurrentUser } from './decorators/current-user.decorator';
 export { Roles, ROLES_KEY } from './decorators/roles.decorator';

@@ -9,6 +9,7 @@ import { DataSource, In, Repository } from 'typeorm';
 import { Address } from '../addresses/entities/address.entity';
 import { OrderStatus } from '../enums/order-status.enum';
 import { UserRole } from '../enums/user-role.enum';
+import { computeOrderFees, roundMoney } from '../common/constants/pricing';
 import { MenuItem } from '../menu/entities/menu-item.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ShopItem } from '../shop-items/entities/shop-item.entity';
@@ -114,7 +115,12 @@ export class OrdersService {
     }
 
     const [items, total] = await qb.getManyAndCount();
-    return { items, total, skip, take };
+    return {
+      items: items.map((order) => this.decorateOrderItems(order)),
+      total,
+      skip,
+      take,
+    };
   }
 
   async findOneForUser(currentUser: User, id: string): Promise<Order> {
@@ -144,7 +150,7 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     }
 
-    return order;
+    return this.decorateOrderItems(order);
   }
 
   async create(
@@ -270,9 +276,7 @@ export class OrdersService {
         }
       }
 
-      const tax = Number((subtotal * 0.05).toFixed(2));
-      const deliveryFee = 5;
-      const total = Number((subtotal + tax + deliveryFee).toFixed(2));
+      const { tax, deliveryFee, total } = computeOrderFees(subtotal);
       const etaMinutes = 40;
       const today = new Date();
       const orderId = `ORD-${today.getFullYear()}-${(today.getMonth() + 1)
@@ -675,5 +679,18 @@ export class OrdersService {
     return (await this.orderRepository.findOne({
       where: { id: orderId },
     })) as Order;
+  }
+
+  /** Attaches a server-computed `lineTotal` to every order item so clients
+   * never perform pricing math. */
+  private decorateOrderItems(order: Order): Order {
+    if (order.items?.length) {
+      for (const item of order.items) {
+        (item as OrderItem & { lineTotal: number }).lineTotal = roundMoney(
+          Number(item.price) * item.quantity,
+        );
+      }
+    }
+    return order;
   }
 }

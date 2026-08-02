@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -10,6 +11,7 @@ import { Chat } from './chat.entity';
 import { User } from '../../users/entities/user.entity';
 
 @Entity('chat_messages')
+@Index(['chatId', 'createdAt'])
 export class ChatMessage {
   @PrimaryGeneratedColumn('increment')
   id!: number;

@@ -28,7 +28,7 @@ export class CartController {
 
   @Get('active')
   async getActiveCart(@CurrentUser('id') currentUserId: number) {
-    return await this.cartService.getActiveCart(currentUserId);
+    return await this.cartService.getActiveCartDetails(currentUserId);
   }
 
   @Get('items')

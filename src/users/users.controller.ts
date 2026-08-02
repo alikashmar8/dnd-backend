@@ -52,6 +52,19 @@ export class UsersController {
     return await this.usersService.adminUpdate(id, dto);
   }
 
+  @Get('profile')
+  async getProfile(@CurrentUser('id') userId: number) {
+    return await this.usersService.getProfile(userId);
+  }
+
+  @Put('profile')
+  async updateProfile(
+    @CurrentUser('id') userId: number,
+    @Body() updateUserDto: UpdateUserDto,
+  ) {
+    return await this.usersService.updateProfile(userId, updateUserDto);
+  }
+
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
   @Get(':id')
@@ -64,18 +77,5 @@ export class UsersController {
   @Delete(':id')
   async remove(@Param('id', ParseIntPipe) id: number) {
     return await this.usersService.adminRemove(id);
-  }
-
-  @Get('profile')
-  async getProfile(@CurrentUser('id') userId: number) {
-    return await this.usersService.getProfile(userId);
-  }
-
-  @Put('profile')
-  async updateProfile(
-    @CurrentUser('id') userId: number,
-    @Body() updateUserDto: UpdateUserDto,
-  ) {
-    return await this.usersService.updateProfile(userId, updateUserDto);
   }
 }

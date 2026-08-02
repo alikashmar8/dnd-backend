@@ -1,4 +1,11 @@
-import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 
 export class UpdateMenuCategoryDto {
   @IsOptional()
@@ -17,4 +24,12 @@ export class UpdateMenuCategoryDto {
   @IsOptional()
   @IsString()
   image?: string;
+
+  @ValidateIf(
+    (o: UpdateMenuCategoryDto) =>
+      o.parentId !== undefined && o.parentId !== null,
+  )
+  @IsInt()
+  @Min(1)
+  parentId?: number | null;
 }

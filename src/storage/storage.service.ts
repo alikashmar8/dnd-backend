@@ -17,6 +17,7 @@ export class StorageService {
   private readonly region: string;
   private readonly endpoint?: string;
   private readonly signedUrlExpiry: number;
+  private readonly publicUrl: string;
 
   constructor(private readonly configService: ConfigService) {
     this.region = this.configService.get<string>('storage.region', 'us-east-1');
@@ -29,6 +30,7 @@ export class StorageService {
       'storage.signedUrlExpiry',
       900,
     );
+    this.publicUrl = this.configService.get<string>('storage.publicUrl', '');
 
     const accessKeyId = this.configService.get<string>(
       'storage.accessKeyId',
@@ -76,6 +78,28 @@ export class StorageService {
     );
     return Object.fromEntries(entries);
   }
+
+  /**
+   * Converts a stored object key into an absolute, publicly-addressable URL.
+   *
+   * Absolute URLs (https://, data:, blob:) are returned untouched so the API
+   * can keep legacy seed data / pasted external images working. Storage keys
+   * are prefixed with `publicUrl` (CloudFront in production, public MinIO
+   * bucket in development). When no `publicUrl` is configured the key is
+   * returned unchanged so clients that still resolve signed URLs keep working.
+   */
+  toPublicUrl(key: string | null | undefined): string {
+    if (!key || /^(https?:|data:|blob:)/i.test(key)) {
+      return key ?? '';
+    }
+    if (!this.publicUrl) {
+      return key;
+    }
+    const base = this.publicUrl.replace(/\/+$/, '');
+    const path = key.replace(/^\/+/, '');
+    return `${base}/${path}`;
+  }
+
 
   async upload(file: Express.Multer.File, folder: string): Promise<string> {
     const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
