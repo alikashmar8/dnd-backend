@@ -100,7 +100,6 @@ export class StorageService {
     return `${base}/${path}`;
   }
 
-
   async upload(file: Express.Multer.File, folder: string): Promise<string> {
     const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
     const key = `${folder}/${Date.now()}-${sanitizedName}`;

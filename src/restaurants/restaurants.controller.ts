@@ -21,7 +21,7 @@ import { UserRole } from '../enums/user-role.enum';
 
 @Controller('restaurants')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN)
+@Roles(UserRole.SUPERADMIN)
 export class RestaurantsController {
   constructor(private readonly restaurantsService: RestaurantsService) {}
 

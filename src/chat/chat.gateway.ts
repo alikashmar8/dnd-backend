@@ -15,11 +15,11 @@ import { ChatService } from './chat.service';
 import { ChatMessage } from './entities/chat-message.entity';
 import { UserRole } from '../enums/user-role.enum';
 
-/** Socket room shared by every connected staff (admin/support) member. */
+/** Socket room shared by every connected staff (superadmin) member. */
 export const SUPPORT_STAFF_ROOM = 'support_staff';
 
 function isStaffRole(role?: UserRole): boolean {
-  return !!role && (role === UserRole.ADMIN || role === UserRole.SUPPORT);
+  return !!role && role === UserRole.SUPERADMIN;
 }
 
 @WebSocketGateway({ namespace: 'chat', cors: true })

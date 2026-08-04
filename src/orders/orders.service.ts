@@ -31,6 +31,8 @@ export class OrdersService {
     private readonly menuItemRepository: Repository<MenuItem>,
     @InjectRepository(ShopItem)
     private readonly shopItemRepository: Repository<ShopItem>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     private readonly dataSource: DataSource,
     private readonly notificationsService: NotificationsService,
   ) {}
@@ -44,6 +46,7 @@ export class OrdersService {
       search?: string;
       customerId?: number;
       driverId?: number;
+      assignedToMe?: boolean;
     },
   ): Promise<{ items: Order[]; total: number; skip: number; take: number }> {
     const skip = query.skip ?? 0;
@@ -61,7 +64,12 @@ export class OrdersService {
       .skip(skip)
       .take(take);
 
-    if (currentUser.role === UserRole.ADMIN) {
+    if (
+      currentUser.role === UserRole.SUPERADMIN ||
+      currentUser.role === UserRole.KITCHEN_HEAD ||
+      currentUser.role === UserRole.WAREHOUSE_HEAD ||
+      currentUser.role === UserRole.DRIVER_HEAD
+    ) {
       if (query.customerId) {
         qb.andWhere('order.customerId = :customerId', {
           customerId: query.customerId,
@@ -78,28 +86,40 @@ export class OrdersService {
       qb.andWhere('order.driverId = :currentUserId', {
         currentUserId: currentUser.id,
       });
-    } else if (currentUser.role === UserRole.KITCHEN) {
+    } else if (currentUser.role === UserRole.KITCHEN_STAFF) {
       qb.andWhere(
         '(order.status IN (:...statuses) AND EXISTS (SELECT 1 FROM order_items oi WHERE oi."orderId" = order.id AND oi."itemType" = \'menu\'))',
         {
           statuses: [OrderStatus.CONFIRMED, OrderStatus.PREPARING],
         },
       );
-      qb.andWhere(
-        '(order.kitchenUserId IS NULL OR order.kitchenUserId = :currentUserId)',
-        { currentUserId: currentUser.id },
-      );
-    } else if (currentUser.role === UserRole.WAREHOUSE) {
+      if (query.assignedToMe) {
+        qb.andWhere('order.kitchenUserId = :currentUserId', {
+          currentUserId: currentUser.id,
+        });
+      } else {
+        qb.andWhere(
+          '(order.kitchenUserId IS NULL OR order.kitchenUserId = :currentUserId)',
+          { currentUserId: currentUser.id },
+        );
+      }
+    } else if (currentUser.role === UserRole.WAREHOUSE_STAFF) {
       qb.andWhere(
         '(order.status IN (:...statuses) AND EXISTS (SELECT 1 FROM order_items oi WHERE oi."orderId" = order.id AND oi."itemType" = \'shop\'))',
         {
           statuses: [OrderStatus.CONFIRMED, OrderStatus.PREPARING],
         },
       );
-      qb.andWhere(
-        '(order.warehouseUserId IS NULL OR order.warehouseUserId = :currentUserId)',
-        { currentUserId: currentUser.id },
-      );
+      if (query.assignedToMe) {
+        qb.andWhere('order.warehouseUserId = :currentUserId', {
+          currentUserId: currentUser.id,
+        });
+      } else {
+        qb.andWhere(
+          '(order.warehouseUserId IS NULL OR order.warehouseUserId = :currentUserId)',
+          { currentUserId: currentUser.id },
+        );
+      }
     }
 
     if (query.status) {
@@ -140,6 +160,14 @@ export class OrdersService {
       });
     } else if (currentUser.role === UserRole.DRIVER) {
       qb.andWhere('order.driverId = :currentUserId', {
+        currentUserId: currentUser.id,
+      });
+    } else if (currentUser.role === UserRole.KITCHEN_STAFF) {
+      qb.andWhere('order.kitchenUserId = :currentUserId', {
+        currentUserId: currentUser.id,
+      });
+    } else if (currentUser.role === UserRole.WAREHOUSE_STAFF) {
+      qb.andWhere('order.warehouseUserId = :currentUserId', {
         currentUserId: currentUser.id,
       });
     }
@@ -421,7 +449,7 @@ export class OrdersService {
       return order;
     }
 
-    if (currentUser.role === UserRole.ADMIN) {
+    if (currentUser.role === UserRole.SUPERADMIN) {
       const validAdminTransitions: Record<OrderStatus, OrderStatus[]> = {
         [OrderStatus.PENDING]: [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
         [OrderStatus.CONFIRMED]: [OrderStatus.CANCELLED],
@@ -459,139 +487,129 @@ export class OrdersService {
     throw new ForbiddenException('Insufficient permissions');
   }
 
-  async assignDriver(
-    currentUser: User,
-    orderId: string,
-    driverId: number,
-  ): Promise<Order> {
-    const order = await this.orderRepository.findOne({
-      where: { id: orderId },
-      relations: { driver: true, address: true, items: true },
+  async assignDriver(orderId: string, driverId: string): Promise<Order> {
+    const driver = await this.getStaffOrFail(
+      Number(driverId),
+      UserRole.DRIVER,
+      'DRIVER',
+    );
+
+    return await this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(Order);
+      const order = await repo.findOne({
+        where: { id: orderId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
+
+      order.driverId = driver.id;
+      order.driverAssignedAt = new Date();
+
+      return await repo.save(order);
     });
-
-    if (!order) {
-      throw new NotFoundException('Order not found');
-    }
-
-    order.driverId = driverId;
-    await this.orderRepository.save(order);
-    return order;
   }
 
-  async assignKitchenUser(
-    currentUser: User,
-    orderId: string,
-    userId?: number,
-  ): Promise<Order> {
-    if (
-      currentUser.role !== UserRole.KITCHEN &&
-      currentUser.role !== UserRole.ADMIN
-    ) {
-      throw new ForbiddenException('Only kitchen users can be assigned');
-    }
+  async assignKitchenStaff(orderId: string, staffId: string): Promise<Order> {
+    const staff = await this.getStaffOrFail(
+      Number(staffId),
+      UserRole.KITCHEN_STAFF,
+      'KITCHEN_STAFF',
+    );
 
-    const targetUserId =
-      currentUser.role === UserRole.ADMIN ? userId : currentUser.id;
+    return await this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(Order);
+      const order = await repo.findOne({
+        where: { id: orderId },
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    if (!targetUserId) {
-      throw new BadRequestException(
-        'userId is required when admin assigns a kitchen user',
-      );
-    }
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
 
-    const order = await this.orderRepository.findOne({
-      where: { id: orderId },
-      relations: { items: true, kitchenUser: true, warehouseUser: true },
+      if (
+        order.status !== OrderStatus.CONFIRMED &&
+        order.status !== OrderStatus.PREPARING
+      ) {
+        throw new BadRequestException('Order must be confirmed or preparing');
+      }
+
+      const hasMenuItems =
+        (await manager.getRepository(OrderItem).count({
+          where: { orderId, itemType: 'menu' },
+        })) > 0;
+      if (!hasMenuItems) {
+        throw new BadRequestException('Order has no menu items');
+      }
+
+      if (order.kitchenUserId) {
+        throw new BadRequestException(
+          'Kitchen staff already assigned to this order',
+        );
+      }
+
+      order.kitchenUserId = staff.id;
+      order.kitchenAssignedAt = new Date();
+
+      if (order.status === OrderStatus.CONFIRMED) {
+        order.status = OrderStatus.PREPARING;
+      }
+
+      return await repo.save(order);
     });
-
-    if (!order) {
-      throw new NotFoundException('Order not found');
-    }
-
-    if (
-      order.status !== OrderStatus.CONFIRMED &&
-      order.status !== OrderStatus.PREPARING
-    ) {
-      throw new BadRequestException('Order must be confirmed or preparing');
-    }
-
-    const hasMenuItems = order.items.some((item) => item.itemType === 'menu');
-    if (!hasMenuItems) {
-      throw new BadRequestException('Order has no menu items');
-    }
-
-    if (order.kitchenUserId) {
-      throw new BadRequestException(
-        'Kitchen user already assigned to this order',
-      );
-    }
-
-    order.kitchenUserId = targetUserId;
-    order.kitchenAssignedAt = new Date();
-
-    if (order.status === OrderStatus.CONFIRMED) {
-      order.status = OrderStatus.PREPARING;
-    }
-
-    return await this.orderRepository.save(order);
   }
 
-  async assignWarehouseUser(
-    currentUser: User,
-    orderId: string,
-    userId?: number,
-  ): Promise<Order> {
-    if (
-      currentUser.role !== UserRole.WAREHOUSE &&
-      currentUser.role !== UserRole.ADMIN
-    ) {
-      throw new ForbiddenException('Only warehouse users can be assigned');
-    }
+  async assignWarehouseStaff(orderId: string, staffId: string): Promise<Order> {
+    const staff = await this.getStaffOrFail(
+      Number(staffId),
+      UserRole.WAREHOUSE_STAFF,
+      'WAREHOUSE_STAFF',
+    );
 
-    const targetUserId =
-      currentUser.role === UserRole.ADMIN ? userId : currentUser.id;
+    return await this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(Order);
+      const order = await repo.findOne({
+        where: { id: orderId },
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    if (!targetUserId) {
-      throw new BadRequestException(
-        'userId is required when admin assigns a warehouse user',
-      );
-    }
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
 
-    const order = await this.orderRepository.findOne({
-      where: { id: orderId },
-      relations: { items: true, kitchenUser: true, warehouseUser: true },
+      if (
+        order.status !== OrderStatus.CONFIRMED &&
+        order.status !== OrderStatus.PREPARING
+      ) {
+        throw new BadRequestException('Order must be confirmed or preparing');
+      }
+
+      const hasShopItems =
+        (await manager.getRepository(OrderItem).count({
+          where: { orderId, itemType: 'shop' },
+        })) > 0;
+      if (!hasShopItems) {
+        throw new BadRequestException('Order has no shop items');
+      }
+
+      if (order.warehouseUserId && order.warehouseUserId !== staff.id) {
+        throw new BadRequestException(
+          'Warehouse staff already assigned to this order',
+        );
+      }
+
+      order.warehouseUserId = staff.id;
+      order.warehouseAssignedAt = new Date();
+
+      if (order.status === OrderStatus.CONFIRMED) {
+        order.status = OrderStatus.PREPARING;
+      }
+
+      return await repo.save(order);
     });
-
-    if (!order) {
-      throw new NotFoundException('Order not found');
-    }
-
-    if (
-      order.status !== OrderStatus.CONFIRMED &&
-      order.status !== OrderStatus.PREPARING
-    ) {
-      throw new BadRequestException('Order must be confirmed or preparing');
-    }
-
-    const hasShopItems = order.items.some((item) => item.itemType === 'shop');
-    if (!hasShopItems) {
-      throw new BadRequestException('Order has no shop items');
-    }
-
-    if (order.warehouseUserId && order.warehouseUserId !== targetUserId) {
-      throw new BadRequestException(
-        'Warehouse user already assigned to this order',
-      );
-    }
-
-    order.warehouseUserId = targetUserId;
-    order.warehouseAssignedAt = new Date();
-
-    if (order.status === OrderStatus.CONFIRMED) {
-      order.status = OrderStatus.PREPARING;
-    }
-
-    return await this.orderRepository.save(order);
   }
 
   async markPrepared(
@@ -599,76 +617,82 @@ export class OrdersService {
     orderId: string,
     role?: 'kitchen' | 'warehouse',
   ): Promise<Order> {
-    const order = await this.orderRepository.findOne({
-      where: { id: orderId },
-      relations: { items: true, kitchenUser: true, warehouseUser: true },
-    });
-
-    if (!order) {
-      throw new NotFoundException('Order not found');
-    }
-
-    if (order.status !== OrderStatus.PREPARING) {
-      throw new BadRequestException('Order must be in preparing status');
-    }
-
-    const hasMenuItems = order.items.some((item) => item.itemType === 'menu');
-    const hasShopItems = order.items.some((item) => item.itemType === 'shop');
-
     let targetRole: 'kitchen' | 'warehouse';
 
-    if (currentUser.role === UserRole.ADMIN) {
+    if (currentUser.role === UserRole.SUPERADMIN) {
       if (!role) {
         throw new BadRequestException(
           'role is required when admin marks prepared',
         );
       }
       targetRole = role;
-    } else if (currentUser.role === UserRole.KITCHEN) {
+    } else if (currentUser.role === UserRole.KITCHEN_STAFF) {
       targetRole = 'kitchen';
-    } else if (currentUser.role === UserRole.WAREHOUSE) {
+    } else if (currentUser.role === UserRole.WAREHOUSE_STAFF) {
       targetRole = 'warehouse';
     } else {
       throw new ForbiddenException('Insufficient permissions');
     }
 
-    if (targetRole === 'kitchen') {
-      if (!hasMenuItems) {
-        throw new BadRequestException('Order has no menu items');
-      }
-      if (
-        order.kitchenUserId !== currentUser.id &&
-        currentUser.role !== UserRole.ADMIN
-      ) {
-        throw new ForbiddenException('You are not assigned to this order');
-      }
-      order.kitchenPreparedAt = new Date();
-    } else {
-      if (!hasShopItems) {
-        throw new BadRequestException('Order has no shop items');
-      }
-      if (
-        order.warehouseUserId !== currentUser.id &&
-        currentUser.role !== UserRole.ADMIN
-      ) {
-        throw new ForbiddenException('You are not assigned to this order');
-      }
-      order.warehousePreparedAt = new Date();
-    }
+    const canBypassAssignment = currentUser.role === UserRole.SUPERADMIN;
 
-    await this.orderRepository.save(order);
+    const savedOrder = await this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(Order);
+      const order = await repo.findOne({
+        where: { id: orderId },
+        lock: { mode: 'pessimistic_write' },
+      });
 
-    const kitchenDone = !hasMenuItems || order.kitchenPreparedAt !== null;
-    const warehouseDone = !hasShopItems || order.warehousePreparedAt !== null;
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
 
-    if (kitchenDone && warehouseDone) {
-      order.status = OrderStatus.WAITING_FOR_PICKUP;
-      await this.orderRepository.save(order);
+      if (order.status !== OrderStatus.PREPARING) {
+        throw new BadRequestException('Order must be in preparing status');
+      }
 
+      const hasMenuItems =
+        (await manager.getRepository(OrderItem).count({
+          where: { orderId, itemType: 'menu' },
+        })) > 0;
+      const hasShopItems =
+        (await manager.getRepository(OrderItem).count({
+          where: { orderId, itemType: 'shop' },
+        })) > 0;
+
+      if (targetRole === 'kitchen') {
+        if (!hasMenuItems) {
+          throw new BadRequestException('Order has no menu items');
+        }
+        if (order.kitchenUserId !== currentUser.id && !canBypassAssignment) {
+          throw new ForbiddenException('You are not assigned to this order');
+        }
+        order.kitchenPreparedAt = new Date();
+      } else {
+        if (!hasShopItems) {
+          throw new BadRequestException('Order has no shop items');
+        }
+        if (order.warehouseUserId !== currentUser.id && !canBypassAssignment) {
+          throw new ForbiddenException('You are not assigned to this order');
+        }
+        order.warehousePreparedAt = new Date();
+      }
+
+      const kitchenDone = !hasMenuItems || order.kitchenPreparedAt !== null;
+      const warehouseDone = !hasShopItems || order.warehousePreparedAt !== null;
+
+      if (kitchenDone && warehouseDone) {
+        order.status = OrderStatus.WAITING_FOR_PICKUP;
+      }
+
+      return await repo.save(order);
+    });
+
+    if (savedOrder.status === OrderStatus.WAITING_FOR_PICKUP) {
       try {
         await this.notificationsService.sendOrderStatusNotification(
-          order.customerId,
-          order.id,
+          savedOrder.customerId,
+          savedOrder.id,
           OrderStatus.WAITING_FOR_PICKUP,
         );
       } catch (error) {
@@ -677,8 +701,31 @@ export class OrdersService {
     }
 
     return (await this.orderRepository.findOne({
-      where: { id: orderId },
+      where: { id: savedOrder.id },
     })) as Order;
+  }
+
+  /** Resolves a user id into a persisted user, enforcing the expected role. */
+  private async getStaffOrFail(
+    userId: number,
+    expectedRole: UserRole,
+    roleLabel: string,
+  ): Promise<User> {
+    if (!Number.isInteger(userId) || userId <= 0) {
+      throw new BadRequestException('Invalid user id');
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { id: userId, role: expectedRole },
+    });
+
+    if (!user) {
+      throw new BadRequestException(
+        `Provided id does not reference a user with role '${roleLabel}'`,
+      );
+    }
+
+    return user;
   }
 
   /** Attaches a server-computed `lineTotal` to every order item so clients

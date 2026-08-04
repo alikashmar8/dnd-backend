@@ -37,7 +37,7 @@ export class ShopItemsService {
       .createQueryBuilder('item')
       .leftJoinAndSelect('item.category', 'category');
 
-    if (currentUser.role !== UserRole.ADMIN) {
+    if (currentUser.role !== UserRole.SUPERADMIN) {
       qb.andWhere('item.available = true');
     }
 
@@ -102,7 +102,7 @@ export class ShopItemsService {
 
   async findOne(currentUser: User, id: number): Promise<ShopItem> {
     const where: FindOptionsWhere<ShopItem> = { id };
-    if (currentUser.role !== UserRole.ADMIN) {
+    if (currentUser.role !== UserRole.SUPERADMIN) {
       where.available = true;
     }
 

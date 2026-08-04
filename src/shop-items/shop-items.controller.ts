@@ -30,21 +30,21 @@ export class ShopItemsController {
 
   /* ── Category routes must come BEFORE :id routes ──────────── */
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Get('categories')
   async findCategories() {
     return await this.shopItemsService.findCategories();
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Post('categories')
   async createCategory(@Body() dto: CreateShopCategoryDto) {
     return await this.shopItemsService.createCategory(dto);
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Patch('categories/:id')
   async updateCategory(
     @Param('id', ParseIntPipe) id: number,
@@ -54,7 +54,7 @@ export class ShopItemsController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Delete('categories/:id')
   async deleteCategory(@Param('id', ParseIntPipe) id: number) {
     return await this.shopItemsService.deleteCategory(id);
@@ -78,14 +78,14 @@ export class ShopItemsController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Post()
   async createItem(@Body() dto: CreateShopItemDto) {
     return await this.shopItemsService.createItem(dto);
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Patch(':id')
   async updateItem(
     @Param('id', ParseIntPipe) id: number,
@@ -95,7 +95,7 @@ export class ShopItemsController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Delete(':id')
   async deleteItem(@Param('id', ParseIntPipe) id: number) {
     return await this.shopItemsService.deleteItem(id);

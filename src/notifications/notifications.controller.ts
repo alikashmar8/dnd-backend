@@ -42,7 +42,7 @@ export class NotificationsController {
 
   @Post('send')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   async sendNotification(@Body() dto: SendNotificationDto) {
     const success = await this.notificationsService.sendNotification(dto);
     return {

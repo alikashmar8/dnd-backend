@@ -36,7 +36,7 @@ export class MenuService {
       .leftJoinAndSelect('menuItem.category', 'category')
       .leftJoinAndSelect('menuItem.restaurant', 'restaurant');
 
-    if (currentUser.role !== UserRole.ADMIN) {
+    if (currentUser.role !== UserRole.SUPERADMIN) {
       qb.andWhere('menuItem.available = true');
       qb.andWhere('restaurant.isActive = true');
     }
@@ -119,7 +119,7 @@ export class MenuService {
     }
 
     if (
-      currentUser.role !== UserRole.ADMIN &&
+      currentUser.role !== UserRole.SUPERADMIN &&
       (!item.available || item.restaurant?.isActive === false)
     ) {
       throw new NotFoundException('Menu item not available');
@@ -178,7 +178,7 @@ export class MenuService {
     const tree = this.buildCategoryTree(categories);
     this.attachItemCounts(tree, countByCategory);
 
-    if (currentUser.role === UserRole.ADMIN) {
+    if (currentUser.role === UserRole.SUPERADMIN) {
       return tree;
     }
 

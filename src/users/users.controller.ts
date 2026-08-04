@@ -29,21 +29,26 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(
+    UserRole.SUPERADMIN,
+    UserRole.KITCHEN_HEAD,
+    UserRole.WAREHOUSE_HEAD,
+    UserRole.DRIVER_HEAD,
+  )
   @Get()
   async findAll(@Query() query: UsersQueryDto) {
     return await this.usersService.findAll(query);
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Post()
   async create(@Body() dto: CreateUserDto) {
     return await this.usersService.adminCreate(dto);
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Put(':id')
   async update(
     @Param('id', ParseIntPipe) id: number,
@@ -66,14 +71,19 @@ export class UsersController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(
+    UserRole.SUPERADMIN,
+    UserRole.KITCHEN_HEAD,
+    UserRole.WAREHOUSE_HEAD,
+    UserRole.DRIVER_HEAD,
+  )
   @Get(':id')
   async findOne(@Param('id', ParseIntPipe) id: number) {
     return await this.usersService.findById(id);
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Delete(':id')
   async remove(@Param('id', ParseIntPipe) id: number) {
     return await this.usersService.adminRemove(id);

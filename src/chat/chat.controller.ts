@@ -29,7 +29,7 @@ export class ChatController {
 
   @Get('support')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.SUPPORT)
+  @Roles(UserRole.SUPERADMIN)
   async findSupportThreads(
     @CurrentUser('id') currentUserId: number,
     @Query() pagination: PaginationDto,

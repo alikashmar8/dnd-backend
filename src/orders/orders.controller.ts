@@ -17,7 +17,8 @@ import { UserRole } from '../enums/user-role.enum';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { OrdersQueryDto } from './dto/orders-query.dto';
-import { AssignUserDto } from './dto/assign-user.dto';
+import { AssignStaffDto } from './dto/assign-staff.dto';
+import { AssignDriverDto } from './dto/assign-driver.dto';
 import { MarkPreparedDto } from './dto/mark-prepared.dto';
 import { User } from '../users/entities/user.entity';
 
@@ -40,7 +41,7 @@ export class OrdersController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Post()
   async create(
     @CurrentUser() currentUser: User,
@@ -63,52 +64,34 @@ export class OrdersController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN, UserRole.DRIVER_HEAD)
   @Patch(':id/assign-driver')
-  async assignDriver(
-    @CurrentUser() currentUser: User,
-    @Param('id') id: string,
-    @Body() body: { driverId: number },
-  ) {
-    return await this.ordersService.assignDriver(
-      currentUser,
-      id,
-      body.driverId,
-    );
+  async assignDriver(@Param('id') id: string, @Body() dto: AssignDriverDto) {
+    return await this.ordersService.assignDriver(id, dto.driverId);
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.KITCHEN, UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN, UserRole.KITCHEN_HEAD)
   @Patch(':id/assign-kitchen')
-  async assignKitchenUser(
-    @CurrentUser() currentUser: User,
+  async assignKitchenStaff(
     @Param('id') id: string,
-    @Body() dto: AssignUserDto,
+    @Body() dto: AssignStaffDto,
   ) {
-    return await this.ordersService.assignKitchenUser(
-      currentUser,
-      id,
-      dto.userId,
-    );
+    return await this.ordersService.assignKitchenStaff(id, dto.staffId);
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.WAREHOUSE, UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN, UserRole.WAREHOUSE_HEAD)
   @Patch(':id/assign-warehouse')
-  async assignWarehouseUser(
-    @CurrentUser() currentUser: User,
+  async assignWarehouseStaff(
     @Param('id') id: string,
-    @Body() dto: AssignUserDto,
+    @Body() dto: AssignStaffDto,
   ) {
-    return await this.ordersService.assignWarehouseUser(
-      currentUser,
-      id,
-      dto.userId,
-    );
+    return await this.ordersService.assignWarehouseStaff(id, dto.staffId);
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.KITCHEN, UserRole.WAREHOUSE, UserRole.ADMIN)
+  @Roles(UserRole.KITCHEN_STAFF, UserRole.WAREHOUSE_STAFF, UserRole.SUPERADMIN)
   @Patch(':id/mark-prepared')
   async markPrepared(
     @CurrentUser() currentUser: User,

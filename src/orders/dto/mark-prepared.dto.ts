@@ -1,7 +1,7 @@
-import { IsEnum, IsNotEmpty } from 'class-validator';
+import { IsEnum, IsOptional } from 'class-validator';
 
 export class MarkPreparedDto {
+  @IsOptional()
   @IsEnum(['kitchen', 'warehouse'] as const)
-  @IsNotEmpty()
-  role!: 'kitchen' | 'warehouse';
+  role?: 'kitchen' | 'warehouse';
 }

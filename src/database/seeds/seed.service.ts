@@ -74,45 +74,63 @@ export class SeedService {
       role: UserRole.DRIVER,
     });
 
-    const admin = this.userRepository.create({
-      email: 'admin@example.com',
+    const superadmin = this.userRepository.create({
+      email: 'superadmin@example.com',
       passwordHash: hashedPassword,
-      name: 'Admin User',
+      name: 'Super Admin',
       phone: '+96170000000',
-      role: UserRole.ADMIN,
+      role: UserRole.SUPERADMIN,
     });
 
-    const support = this.userRepository.create({
-      email: 'support@example.com',
+    const kitchenHead = this.userRepository.create({
+      email: 'kitchen-head@example.com',
       passwordHash: hashedPassword,
-      name: 'Support Team',
-      phone: '+96178999999',
-      role: UserRole.SUPPORT,
+      name: 'Chef Head',
+      phone: '+96175555555',
+      role: UserRole.KITCHEN_HEAD,
     });
 
-    const kitchen = this.userRepository.create({
-      email: 'kitchen@example.com',
+    const warehouseHead = this.userRepository.create({
+      email: 'warehouse-head@example.com',
       passwordHash: hashedPassword,
-      name: 'Kitchen Staff',
-      phone: '+96172222222',
-      role: UserRole.KITCHEN,
+      name: 'Stock Manager',
+      phone: '+96176666660',
+      role: UserRole.WAREHOUSE_HEAD,
     });
 
-    const warehouse = this.userRepository.create({
-      email: 'warehouse@example.com',
+    const driverHead = this.userRepository.create({
+      email: 'driver-head@example.com',
       passwordHash: hashedPassword,
-      name: 'Warehouse Staff',
-      phone: '+96173333333',
-      role: UserRole.WAREHOUSE,
+      name: 'Fleet Manager',
+      phone: '+96177777777',
+      role: UserRole.DRIVER_HEAD,
+    });
+
+    const kitchenStaff = this.userRepository.create({
+      email: 'kitchen-staff@example.com',
+      passwordHash: hashedPassword,
+      name: 'Kitchen Staff Member',
+      phone: '+96178888888',
+      role: UserRole.KITCHEN_STAFF,
+    });
+
+    const warehouseStaff = this.userRepository.create({
+      email: 'warehouse-staff@example.com',
+      passwordHash: hashedPassword,
+      name: 'Warehouse Staff Member',
+      phone: '+96179999999',
+      role: UserRole.WAREHOUSE_STAFF,
     });
 
     await this.userRepository.save([
       customer,
       driver,
-      admin,
-      support,
-      kitchen,
-      warehouse,
+      superadmin,
+      kitchenHead,
+      warehouseHead,
+      driverHead,
+      kitchenStaff,
+      warehouseStaff,
     ]);
     console.log('✓ Users seeded');
 
@@ -138,7 +156,7 @@ export class SeedService {
     });
 
     const restaurantAddress = this.addressRepository.create({
-      userId: admin.id,
+      userId: superadmin.id,
       title: 'Restaurant Location',
       city: 'New York',
       street: '789 Restaurant Street',
@@ -402,7 +420,7 @@ export class SeedService {
       customerId: customer.id,
       status: OrderStatus.PREPARING,
       driverId: driver.id,
-      kitchenUserId: kitchen.id,
+      kitchenUserId: kitchenStaff.id,
       kitchenAssignedAt: new Date('2026-07-02T18:05:00Z'),
       addressId: address2.id,
       etaMinutes: 35,
@@ -418,7 +436,7 @@ export class SeedService {
       customerId: customer.id,
       status: OrderStatus.IN_ROUTE,
       driverId: driver.id,
-      kitchenUserId: kitchen.id,
+      kitchenUserId: kitchenStaff.id,
       kitchenAssignedAt: new Date('2026-07-02T19:05:00Z'),
       kitchenPreparedAt: new Date('2026-07-02T19:30:00Z'),
       addressId: address1.id,

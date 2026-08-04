@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -15,6 +16,15 @@ import { User } from '../../users/entities/user.entity';
 import { OrderItem } from './order-item.entity';
 
 @Entity('orders')
+@Index('idx_orders_kitchen_queue', ['status', 'kitchenUserId'], {
+  where: `"status" IN ('confirmed', 'preparing')`,
+})
+@Index('idx_orders_warehouse_queue', ['status', 'warehouseUserId'], {
+  where: `"status" IN ('confirmed', 'preparing')`,
+})
+@Index('idx_orders_driver_queue', ['status', 'driverId'], {
+  where: `"status" IN ('waiting_for_pickup', 'in_route')`,
+})
 export class Order {
   @PrimaryColumn({ type: 'varchar', length: 50 })
   id!: string;
@@ -64,6 +74,9 @@ export class Order {
 
   @Column({ type: 'int', nullable: true })
   warehouseUserId!: number | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  driverAssignedAt!: Date | null;
 
   @Column({ type: 'timestamp', nullable: true })
   kitchenAssignedAt!: Date | null;

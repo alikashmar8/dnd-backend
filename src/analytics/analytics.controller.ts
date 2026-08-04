@@ -12,7 +12,7 @@ export class AnalyticsController {
 
   @Get('overview')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   async getOverview(@Query() dateRange: DateRangeDto) {
     return this.analyticsService.getOverview(dateRange);
   }

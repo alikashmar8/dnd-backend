@@ -38,14 +38,14 @@ export class AdsController {
   }
 
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Post()
   async create(@Body() dto: CreateAdDto) {
     return await this.adsService.create(dto);
   }
 
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Patch(':id')
   async update(
     @Param('id', ParseIntPipe) id: number,
@@ -55,7 +55,7 @@ export class AdsController {
   }
 
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Delete(':id')
   async remove(@Param('id', ParseIntPipe) id: number) {
     return await this.adsService.remove(id);

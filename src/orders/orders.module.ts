@@ -8,6 +8,7 @@ import { Address } from '../addresses/entities/address.entity';
 import { MenuItem } from '../menu/entities/menu-item.entity';
 import { ShopItem } from '../shop-items/entities/shop-item.entity';
 import { Restaurant } from '../restaurants/entities/restaurant.entity';
+import { User } from '../users/entities/user.entity';
 import { AuthModule } from '../auth/auth.module';
 import { CommonModule } from '../common/common.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -21,6 +22,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       MenuItem,
       ShopItem,
       Restaurant,
+      User,
     ]),
     AuthModule,
     CommonModule,

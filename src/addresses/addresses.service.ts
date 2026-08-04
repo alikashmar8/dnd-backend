@@ -28,7 +28,7 @@ export class AddressesService {
 
     const where: any = {};
 
-    if (userId && currentUser.role === UserRole.ADMIN) {
+    if (userId && currentUser.role === UserRole.SUPERADMIN) {
       where.userId = userId;
     } else {
       where.userId = currentUser.id;
@@ -50,7 +50,7 @@ export class AddressesService {
     userId?: number,
   ): Promise<Address> {
     const where: any = { id };
-    if (userId && currentUser.role === UserRole.ADMIN) {
+    if (userId && currentUser.role === UserRole.SUPERADMIN) {
       where.userId = userId;
     } else {
       where.userId = currentUser.id;

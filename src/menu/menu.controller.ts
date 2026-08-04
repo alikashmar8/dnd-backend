@@ -45,14 +45,14 @@ export class MenuController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Post('items')
   async createItem(@Body() dto: CreateMenuItemDto) {
     return await this.menuService.createItem(dto);
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Patch('items/:id')
   async updateItem(
     @Param('id', ParseIntPipe) id: number,
@@ -62,7 +62,7 @@ export class MenuController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Delete('items/:id')
   async deleteItem(@Param('id', ParseIntPipe) id: number) {
     return await this.menuService.deleteItem(id);
@@ -74,14 +74,14 @@ export class MenuController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Post('categories')
   async createCategory(@Body() dto: CreateMenuCategoryDto) {
     return await this.menuService.createCategory(dto);
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Patch('categories/:id')
   async updateCategory(
     @Param('id', ParseIntPipe) id: number,
@@ -91,7 +91,7 @@ export class MenuController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserRole.SUPERADMIN)
   @Delete('categories/:id')
   async deleteCategory(@Param('id', ParseIntPipe) id: number) {
     return await this.menuService.deleteCategory(id);

@@ -1,4 +1,10 @@
-import { IsEnum, IsOptional, IsNumber, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsOptional,
+  IsNumber,
+  IsString,
+} from 'class-validator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { OrderStatus } from '../../enums/order-status.enum';
 import { Transform } from 'class-transformer';
@@ -21,4 +27,9 @@ export class OrdersQueryDto extends PaginationDto {
   @IsNumber()
   @Transform(({ value }) => Number(value))
   driverId?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === true || value === 'true')
+  assignedToMe?: boolean;
 }
