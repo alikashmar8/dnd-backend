@@ -54,4 +54,12 @@ export class CreateMenuItemDto {
   @IsOptional()
   @IsBoolean()
   available?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isDailyDish?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isHealthyItem?: boolean;
 }

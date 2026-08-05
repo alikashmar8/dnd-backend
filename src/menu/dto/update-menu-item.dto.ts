@@ -47,4 +47,12 @@ export class UpdateMenuItemDto {
   @IsOptional()
   @IsNumber()
   restaurantId?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isDailyDish?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isHealthyItem?: boolean;
 }

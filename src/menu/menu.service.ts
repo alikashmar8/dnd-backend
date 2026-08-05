@@ -38,7 +38,7 @@ export class MenuService {
 
     if (currentUser.role !== UserRole.SUPERADMIN) {
       qb.andWhere('menuItem.available = true');
-      qb.andWhere('restaurant.isActive = true');
+      qb.andWhere('(restaurant.isActive = true OR restaurant.id IS NULL)');
     }
 
     if (query.type) {
@@ -88,13 +88,25 @@ export class MenuService {
     }
 
     if (query.categoryId) {
-      const categoryIds = await this.collectCategoryAndDescendants(
-        query.categoryId,
-      );
-      qb.andWhere('menuItem.categoryId IN (:...categoryIds)', {
-        categoryIds,
-      });
-    }
+  const categoryIds = await this.collectCategoryAndDescendants(
+    query.categoryId,
+  );
+  qb.andWhere('menuItem.categoryId IN (:...categoryIds)', {
+    categoryIds,
+  });
+}
+
+if (query.is_daily_dish !== undefined) {
+  qb.andWhere('menuItem.isDailyDish = :isDailyDish', {
+    isDailyDish: query.is_daily_dish,
+  });
+}
+
+if (query.is_healthy_item !== undefined) {
+  qb.andWhere('menuItem.isHealthyItem = :isHealthyItem', {
+    isHealthyItem: query.is_healthy_item,
+  });
+}
 
     const [items, total] = await qb
       .skip(skip)

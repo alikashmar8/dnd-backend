@@ -40,8 +40,13 @@ export class GetMenuItemsQueryDto extends PaginationDto {
   @IsInt()
   categoryId?: number;
 
-  @IsOptional()
+@IsOptional()
 @Transform(({ value }) => value === 'true')
 @IsBoolean()
 is_daily_dish?: boolean;
+
+@IsOptional()
+@Transform(({ value }) => value === 'true')
+@IsBoolean()
+is_healthy_item?: boolean;
 }

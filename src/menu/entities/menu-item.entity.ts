@@ -50,6 +50,11 @@ export class MenuItem {
 
   @Column({ type: 'boolean', default: true })
   available!: boolean;
+  @Column({ type: 'boolean', default: false })
+  isDailyDish!: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  isHealthyItem!: boolean;
 
   @Column({ type: 'int', nullable: true })
   restaurantId!: number | null;

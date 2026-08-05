@@ -269,6 +269,7 @@ export class SeedService {
       available: true,
       prepTimeMinutes: 10,
       restaurantId: null,
+      isHealthyItem: true,
     });
 
     const menuItem4 = this.menuItemRepository.create({
@@ -280,6 +281,8 @@ export class SeedService {
       available: true,
       prepTimeMinutes: 25,
       restaurantId: restaurant2.id,
+      isDailyDish: true,
+      isHealthyItem: true,
     });
 
     await this.menuItemRepository.save([

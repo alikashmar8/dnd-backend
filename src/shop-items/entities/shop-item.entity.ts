@@ -50,6 +50,12 @@ export class ShopItem {
   @Column({ type: 'boolean', default: true })
   available!: boolean;
 
+  @Column({ type: 'boolean', default: false })
+  isNewItem!: boolean;
+
+  @Column({ type: 'boolean', default: false })
+  isPopularItem!: boolean;
+
   @Column({ type: 'simple-array', default: '' })
   dietaryTags!: string[];
 

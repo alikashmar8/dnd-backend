@@ -83,6 +83,18 @@ export class ShopItemsService {
       }
     }
 
+    if (query.is_new_item !== undefined) {
+      qb.andWhere('item.isNewItem = :isNewItem', {
+        isNewItem: query.is_new_item,
+      });
+    }
+
+    if (query.is_popular_item !== undefined) {
+      qb.andWhere('item.isPopularItem = :isPopularItem', {
+        isPopularItem: query.is_popular_item,
+      });
+    }
+
     if (query.dietary) {
       qb.andWhere('LOWER(item.dietaryTags) LIKE LOWER(:dietary)', {
         dietary: `%${query.dietary}%`,
