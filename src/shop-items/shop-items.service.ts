@@ -14,6 +14,7 @@ import { CreateShopCategoryDto } from './dto/create-shop-category.dto';
 import { UpdateShopCategoryDto } from './dto/update-shop-category.dto';
 import { User } from '../users/entities/user.entity';
 import { UserRole } from '../enums/user-role.enum';
+import { collectCategoryAndDescendants } from '../common/utils/category-tree';
 
 @Injectable()
 export class ShopItemsService {
@@ -73,6 +74,18 @@ export class ShopItemsService {
       }
     }
 
+    if (query.minPrice !== undefined) {
+      qb.andWhere('item.price >= :minPrice', { minPrice: query.minPrice });
+    }
+
+    if (query.maxPrice !== undefined) {
+      qb.andWhere('item.price <= :maxPrice', { maxPrice: query.maxPrice });
+    }
+
+    if (query.minRating !== undefined) {
+      qb.andWhere('item.rating >= :minRating', { minRating: query.minRating });
+    }
+
     if (query.availability) {
       if (query.availability === 'In Stock') {
         qb.andWhere('item.stockQuantity > 0');
@@ -91,11 +104,15 @@ export class ShopItemsService {
 
     const skip = query.skip ?? 0;
     const take = query.take ?? 20;
-    const [items, total] = await qb
-      .orderBy('item.createdAt', 'DESC')
-      .skip(skip)
-      .take(take)
-      .getManyAndCount();
+
+    if (query.sort === 'popular') {
+      qb.orderBy('item.rating', 'DESC');
+      qb.addOrderBy('item.createdAt', 'DESC');
+    } else {
+      qb.orderBy('item.createdAt', 'DESC');
+    }
+
+    const [items, total] = await qb.skip(skip).take(take).getManyAndCount();
 
     return { items, total, skip, take };
   }
@@ -143,7 +160,7 @@ export class ShopItemsService {
     await this.shopItemRepository.remove(item);
   }
 
-  async findCategories(): Promise<ShopCategory[]> {
+  async findCategories(currentUser: User): Promise<ShopCategory[]> {
     const categories = await this.shopCategoryRepository.find({
       select: {
         id: true,
@@ -169,7 +186,13 @@ export class ShopItemsService {
 
     const tree = this.buildCategoryTree(categories);
     this.attachItemCounts(tree, countByCategory);
-    return tree;
+
+    if (currentUser.role === UserRole.SUPERADMIN) {
+      return tree;
+    }
+
+    const visibleCategoryIds = await this.findVisibleCategoryIds();
+    return this.filterVisibleCategories(tree, visibleCategoryIds);
   }
 
   async createCategory(dto: CreateShopCategoryDto): Promise<ShopCategory> {
@@ -225,6 +248,33 @@ export class ShopItemsService {
     if (!exists) throw new NotFoundException('Shop category not found');
   }
 
+  private async findVisibleCategoryIds(): Promise<Set<number>> {
+    const rows = await this.shopItemRepository
+      .createQueryBuilder('item')
+      .select('item.categoryId', 'categoryId')
+      .where('item.available = :available', { available: true })
+      .getRawMany<{ categoryId: string | number }>();
+
+    return new Set(rows.map((row) => Number(row.categoryId)));
+  }
+
+  private filterVisibleCategories(
+    nodes: ShopCategory[],
+    visibleCategoryIds: Set<number>,
+  ): ShopCategory[] {
+    const result: ShopCategory[] = [];
+    for (const node of nodes) {
+      const visibleChildren = node.children?.length
+        ? this.filterVisibleCategories(node.children, visibleCategoryIds)
+        : [];
+      const selfVisible = visibleCategoryIds.has(node.id);
+      if (selfVisible || visibleChildren.length > 0) {
+        result.push({ ...node, children: visibleChildren });
+      }
+    }
+    return result;
+  }
+
   private async assertNoCycle(id: number, parentId: number): Promise<void> {
     if (id === parentId) {
       throw new BadRequestException('A category cannot be its own parent');
@@ -258,24 +308,7 @@ export class ShopItemsService {
       select: { id: true, parentId: true },
     });
 
-    const ids = new Set<number>([id]);
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const category of categories) {
-        if (
-          category.parentId !== null &&
-          category.parentId !== undefined &&
-          ids.has(category.parentId) &&
-          !ids.has(category.id)
-        ) {
-          ids.add(category.id);
-          changed = true;
-        }
-      }
-    }
-
-    return [...ids];
+    return collectCategoryAndDescendants(categories, id);
   }
 
   private buildCategoryTree(categories: ShopCategory[]): ShopCategory[] {

@@ -12,6 +12,7 @@ import { User } from '../users/entities/user.entity';
 import { AuthModule } from '../auth/auth.module';
 import { CommonModule } from '../common/common.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { OrdersGateway } from './orders.gateway';
 
 @Module({
   imports: [
@@ -29,7 +30,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     NotificationsModule,
   ],
   controllers: [OrdersController],
-  providers: [OrdersService],
+  providers: [OrdersService, OrdersGateway],
   exports: [OrdersService],
 })
 export class OrdersModule {}

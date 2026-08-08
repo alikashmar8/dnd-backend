@@ -28,12 +28,9 @@ import { User } from '../users/entities/user.entity';
 export class ShopItemsController {
   constructor(private readonly shopItemsService: ShopItemsService) {}
 
-  /* ── Category routes must come BEFORE :id routes ──────────── */
-  @UseGuards(RolesGuard)
-  @Roles(UserRole.SUPERADMIN)
   @Get('categories')
-  async findCategories() {
-    return await this.shopItemsService.findCategories();
+  async findCategories(@CurrentUser() currentUser: User) {
+    return await this.shopItemsService.findCategories(currentUser);
   }
 
   @UseGuards(RolesGuard)

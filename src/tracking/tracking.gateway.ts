@@ -76,10 +76,25 @@ export class TrackingGateway
   }
 
   @SubscribeMessage('subscribe:driver')
-  handleSubscribeDriver(
+  async handleSubscribeDriver(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { driverId: number },
   ) {
+    const user = client.data.user as User | undefined;
+    if (!user) {
+      client.emit('error', 'Unauthorized');
+      return;
+    }
+
+    const allowed = await this.trackingService.canViewDriverLocation(
+      user,
+      payload.driverId,
+    );
+    if (!allowed) {
+      client.emit('error', 'Not allowed to subscribe to this driver');
+      return;
+    }
+
     void client.join(`user_${payload.driverId}`);
     client.emit('subscribed', { driverId: payload.driverId });
   }

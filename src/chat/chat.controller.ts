@@ -111,6 +111,19 @@ export class ChatController {
     );
   }
 
+  @Post('order/:orderId')
+  async createOrderThread(
+    @CurrentUser('id') currentUserId: number,
+    @CurrentUser('role') role: UserRole,
+    @Param('orderId') orderId: string,
+  ) {
+    return await this.chatService.getOrCreateOrderThread(
+      orderId,
+      currentUserId,
+      role,
+    );
+  }
+
   @Post(':id/messages')
   async sendMessage(
     @CurrentUser('id') currentUserId: number,

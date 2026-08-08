@@ -235,11 +235,22 @@ export class SeedService {
     });
 
     await this.menuCategoryRepository.save([category1Child, category3Child]);
+
+    // Grandchild level (3rd depth) to prove descendant filtering reaches
+    // multiple levels: Pizzas -> Specialty Pizzas -> Wood-Fired Pizzas
+    const category1Grandchild = this.menuCategoryRepository.create({
+      name: 'Wood-Fired Pizzas',
+      sortOrder: 1,
+      image: 'https://example.com/wood-fired.jpg',
+      parentId: category1Child.id,
+    });
+
+    await this.menuCategoryRepository.save([category1Grandchild]);
     console.log('✓ Menu categories seeded');
 
     // Seed Menu Items
     const menuItem1 = this.menuItemRepository.create({
-      categoryId: category1Child.id,
+      categoryId: category1Grandchild.id,
       name: 'Margherita Pizza',
       description: 'Classic tomato and mozzarella pizza',
       price: 12.99,
@@ -250,7 +261,7 @@ export class SeedService {
     });
 
     const menuItem2 = this.menuItemRepository.create({
-      categoryId: category1Child.id,
+      categoryId: category1Grandchild.id,
       name: 'Pepperoni Pizza',
       description: 'Pepperoni and cheese pizza',
       price: 14.99,
@@ -336,11 +347,21 @@ export class SeedService {
       shopCategory1Child,
       shopCategory3Child,
     ]);
+
+    // Grandchild level: Dairy -> Milk & Eggs -> Fresh Milk
+    const shopCategory1Grandchild = this.shopCategoryRepository.create({
+      name: 'Fresh Milk',
+      image: 'https://example.com/fresh-milk.jpg',
+      sortOrder: 1,
+      parentId: shopCategory1Child.id,
+    });
+
+    await this.shopCategoryRepository.save([shopCategory1Grandchild]);
     console.log('✓ Shop categories seeded');
 
     // Seed Shop Items
     const shopItem1 = this.shopItemRepository.create({
-      categoryId: shopCategory1Child.id,
+      categoryId: shopCategory1Grandchild.id,
       name: 'Organic Milk',
       description: 'Fresh organic whole milk',
       price: 4.99,

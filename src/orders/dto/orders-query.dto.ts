@@ -32,4 +32,11 @@ export class OrdersQueryDto extends PaginationDto {
   @IsBoolean()
   @Transform(({ value }) => value === true || value === 'true')
   assignedToMe?: boolean;
+
+  /** R4 — staff ask for their own completed/prepared history instead of the
+   * active (confirmed/preparing) queue. */
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === true || value === 'true')
+  history?: boolean;
 }

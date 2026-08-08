@@ -1,4 +1,12 @@
-import { IsOptional, IsString, IsIn, IsEnum, IsInt } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsEnum,
+  Max,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { MealType } from '../../enums/meal-type.enum.js';
@@ -12,6 +20,7 @@ export class GetMenuItemsQueryDto extends PaginationDto {
   @IsString()
   search?: string;
 
+  /** Legacy bucket filter (kept for compatibility with existing clients). */
   @IsOptional()
   @IsIn(['<25', '25-45', '>45'])
   price?: string;
@@ -20,6 +29,24 @@ export class GetMenuItemsQueryDto extends PaginationDto {
   @IsIn(['4.3+', '4.6+'])
   rating?: string;
 
+  /** Numeric price range filters (combined with any `price` bucket if both sent). */
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  minPrice?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  maxPrice?: number;
+
+  /** Numeric minimum rating filter, e.g. minRating=4 means rating >= 4. */
+  @IsOptional()
+  @Type(() => Number)
+  @Min(0)
+  @Max(5)
+  minRating?: number;
+
   @IsOptional()
   @IsIn(['20', '30', '45'])
   prepTime?: string;
@@ -27,6 +54,10 @@ export class GetMenuItemsQueryDto extends PaginationDto {
   @IsOptional()
   @IsString()
   dietary?: string;
+
+  @IsOptional()
+  @IsIn(['newest', 'popular'])
+  sort?: 'newest' | 'popular';
 
   @IsOptional()
   @Type(() => Number)

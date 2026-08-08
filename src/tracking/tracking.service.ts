@@ -1,6 +1,12 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import Redis from 'ioredis';
+import { Order } from '../orders/entities/order.entity';
+import { OrderStatus } from '../enums/order-status.enum';
+import { UserRole } from '../enums/user-role.enum';
+import { User } from '../users/entities/user.entity';
 
 export interface DriverLocation {
   driverId: number;
@@ -17,7 +23,11 @@ export class TrackingService implements OnModuleDestroy {
   private readonly redis: Redis;
   private readonly locationPrefix = 'driver:location:';
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @InjectRepository(Order)
+    private readonly orderRepository: Repository<Order>,
+  ) {
     const host = this.configService.get<string>('redis.host', 'localhost');
     const port = this.configService.get<number>('redis.port', 6379);
     const password = this.configService.get<string | undefined>(
@@ -29,6 +39,42 @@ export class TrackingService implements OnModuleDestroy {
     this.redis.connect().catch((err: Error) => {
       this.logger.error(`Failed to connect to Redis: ${err.message}`);
     });
+  }
+
+  /**
+   * R5 — decides who may subscribe to / fetch a driver's live location:
+   * - the driver themself
+   * - SUPERADMIN or DRIVER_HEAD (dispatch)
+   * - a CUSTOMER who owns an active `in_route` order assigned to that driver
+   * Everything else is denied.
+   */
+  async canViewDriverLocation(
+    currentUser: User,
+    driverId: number,
+  ): Promise<boolean> {
+    if (!currentUser || !currentUser.id) return false;
+
+    if (currentUser.id === driverId) return true;
+
+    if (
+      currentUser.role === UserRole.SUPERADMIN ||
+      currentUser.role === UserRole.DRIVER_HEAD
+    ) {
+      return true;
+    }
+
+    if (currentUser.role === UserRole.CUSTOMER) {
+      const activeOrder = await this.orderRepository.findOne({
+        where: {
+          customerId: currentUser.id,
+          driverId,
+          status: OrderStatus.IN_ROUTE,
+        },
+      });
+      return Boolean(activeOrder);
+    }
+
+    return false;
   }
 
   async onModuleDestroy() {
