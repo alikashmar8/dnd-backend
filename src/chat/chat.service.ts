@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, In, Repository } from 'typeorm';
 import { UserRole } from '../enums/user-role.enum';
 import { NotificationsService } from '../notifications/notifications.service';
+import { Order } from '../orders/entities/order.entity';
 import { User } from '../users/entities/user.entity';
 import { ChatMessage } from './entities/chat-message.entity';
 import { Chat } from './entities/chat.entity';
@@ -14,8 +15,15 @@ import { Chat } from './entities/chat.entity';
 /** Roles that can view and answer customer support chats. */
 const STAFF_ROLES = [UserRole.SUPERADMIN];
 
+/** Roles that may open a driver↔customer thread for any order. */
+const ORDER_THREAD_MANAGER_ROLES = [UserRole.SUPERADMIN, UserRole.DRIVER_HEAD];
+
 function isStaffRole(role?: UserRole): boolean {
   return !!role && STAFF_ROLES.includes(role);
+}
+
+function isOrderThreadManagerRole(role?: UserRole): boolean {
+  return !!role && ORDER_THREAD_MANAGER_ROLES.includes(role);
 }
 
 /** One entry of the thread-list response: the chat plus its computed preview data. */
@@ -34,6 +42,8 @@ export class ChatService {
     private readonly messageRepository: Repository<ChatMessage>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Order)
+    private readonly orderRepository: Repository<Order>,
     private readonly notificationsService: NotificationsService,
   ) {}
 
@@ -273,6 +283,37 @@ export class ChatService {
     });
 
     return this.chatRepository.save(thread);
+  }
+
+  /**
+   * Order-scoped driver↔customer thread (R9). Returns the `direct` thread
+   * between an order's customer and its assigned driver, creating it lazily.
+   * Callers: the order's customer, its assigned driver, SUPERADMIN, or
+   * DRIVER_HEAD. Requires `order.driverId` to be set.
+   */
+  async getOrCreateOrderThread(
+    orderId: string,
+    currentUserId: number,
+    currentUserRole?: UserRole,
+  ): Promise<Chat> {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+      relations: { customer: true, driver: true },
+    });
+
+    if (!order || !order.driverId) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const isCustomer = order.customerId === currentUserId;
+    const isAssignedDriver = order.driverId === currentUserId;
+    const isManager = isOrderThreadManagerRole(currentUserRole);
+
+    if (!isCustomer && !isAssignedDriver && !isManager) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return this.getOrCreateThread(order.customerId, order.driverId, 'direct');
   }
 
   async sendMessage(

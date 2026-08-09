@@ -9,6 +9,8 @@ import { databaseConfig } from './config/database.config';
 import { appConfig } from './config/app.config';
 import { redisConfig } from './config/redis.config';
 import { storageConfig } from './config/storage.config';
+import { firebaseConfig } from './config/firebase.config';
+import { FirebaseAdminModule } from './firebase/firebase-admin.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { AddressesModule } from './addresses/addresses.module';
@@ -32,10 +34,17 @@ import { AdsModule } from './ads/ads.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [databaseConfig, appConfig, redisConfig, storageConfig],
+      load: [
+        databaseConfig,
+        appConfig,
+        redisConfig,
+        storageConfig,
+        firebaseConfig,
+      ],
     }),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ ttl: 900000, limit: 3 }]),
+    FirebaseAdminModule,
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

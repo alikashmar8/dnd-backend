@@ -42,6 +42,11 @@ lerna-debug.log*
 .env.production.local
 .env.local
 
+# Firebase service account keys (secrets — never commit)
+*firebase-adminsdk*.json
+*.pem
+*.key
+
 # temp directory
 .temp
 .tmp

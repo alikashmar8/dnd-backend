@@ -7,9 +7,9 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { Address } from '../addresses/entities/address.entity';
+import { computeOrderFees, roundMoney } from '../common/constants/pricing';
 import { OrderStatus } from '../enums/order-status.enum';
 import { UserRole } from '../enums/user-role.enum';
-import { computeOrderFees, roundMoney } from '../common/constants/pricing';
 import { MenuItem } from '../menu/entities/menu-item.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ShopItem } from '../shop-items/entities/shop-item.entity';
@@ -17,6 +17,7 @@ import { User } from '../users/entities/user.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderItem } from './entities/order-item.entity';
 import { Order } from './entities/order.entity';
+import { OrdersGateway } from './orders.gateway';
 
 @Injectable()
 export class OrdersService {
@@ -35,6 +36,7 @@ export class OrdersService {
     private readonly userRepository: Repository<User>,
     private readonly dataSource: DataSource,
     private readonly notificationsService: NotificationsService,
+    private readonly ordersGateway: OrdersGateway,
   ) {}
 
   async findAllForUser(
@@ -47,6 +49,7 @@ export class OrdersService {
       customerId?: number;
       driverId?: number;
       assignedToMe?: boolean;
+      history?: boolean;
     },
   ): Promise<{ items: Order[]; total: number; skip: number; take: number }> {
     const skip = query.skip ?? 0;
@@ -87,12 +90,18 @@ export class OrdersService {
         currentUserId: currentUser.id,
       });
     } else if (currentUser.role === UserRole.KITCHEN_STAFF) {
-      qb.andWhere(
-        '(order.status IN (:...statuses) AND EXISTS (SELECT 1 FROM order_items oi WHERE oi."orderId" = order.id AND oi."itemType" = \'menu\'))',
-        {
-          statuses: [OrderStatus.CONFIRMED, OrderStatus.PREPARING],
-        },
-      );
+      if (!query.history) {
+        qb.andWhere(
+          '(order.status IN (:...statuses) AND EXISTS (SELECT 1 FROM order_items oi WHERE oi."orderId" = order.id AND oi."itemType" = \'menu\'))',
+          {
+            statuses: [OrderStatus.CONFIRMED, OrderStatus.PREPARING],
+          },
+        );
+      } else {
+        qb.andWhere(
+          'EXISTS (SELECT 1 FROM order_items oi WHERE oi."orderId" = order.id AND oi."itemType" = \'menu\')',
+        );
+      }
       if (query.assignedToMe) {
         qb.andWhere('order.kitchenUserId = :currentUserId', {
           currentUserId: currentUser.id,
@@ -104,12 +113,18 @@ export class OrdersService {
         );
       }
     } else if (currentUser.role === UserRole.WAREHOUSE_STAFF) {
-      qb.andWhere(
-        '(order.status IN (:...statuses) AND EXISTS (SELECT 1 FROM order_items oi WHERE oi."orderId" = order.id AND oi."itemType" = \'shop\'))',
-        {
-          statuses: [OrderStatus.CONFIRMED, OrderStatus.PREPARING],
-        },
-      );
+      if (!query.history) {
+        qb.andWhere(
+          '(order.status IN (:...statuses) AND EXISTS (SELECT 1 FROM order_items oi WHERE oi."orderId" = order.id AND oi."itemType" = \'shop\'))',
+          {
+            statuses: [OrderStatus.CONFIRMED, OrderStatus.PREPARING],
+          },
+        );
+      } else {
+        qb.andWhere(
+          'EXISTS (SELECT 1 FROM order_items oi WHERE oi."orderId" = order.id AND oi."itemType" = \'shop\')',
+        );
+      }
       if (query.assignedToMe) {
         qb.andWhere('order.warehouseUserId = :currentUserId', {
           currentUserId: currentUser.id,
@@ -356,6 +371,8 @@ export class OrdersService {
       throw new BadRequestException('Failed to retrieve created order');
     }
 
+    this.emitOrderUpdate(order.id);
+
     return order;
   }
 
@@ -407,6 +424,8 @@ export class OrdersService {
         console.error('Failed to send order status notification:', error);
       }
 
+      this.emitOrderUpdate(order.id);
+
       return order;
     }
 
@@ -446,6 +465,8 @@ export class OrdersService {
         console.error('Failed to send order status notification:', error);
       }
 
+      this.emitOrderUpdate(order.id);
+
       return order;
     }
 
@@ -481,6 +502,8 @@ export class OrdersService {
         console.error('Failed to send order status notification:', error);
       }
 
+      this.emitOrderUpdate(order.id);
+
       return order;
     }
 
@@ -494,22 +517,35 @@ export class OrdersService {
       'DRIVER',
     );
 
-    return await this.dataSource.transaction(async (manager) => {
-      const repo = manager.getRepository(Order);
-      const order = await repo.findOne({
-        where: { id: orderId },
-        lock: { mode: 'pessimistic_write' },
+    return await this.dataSource
+      .transaction(async (manager) => {
+        const repo = manager.getRepository(Order);
+        const order = await repo.findOne({
+          where: { id: orderId },
+          lock: { mode: 'pessimistic_write' },
+        });
+
+        if (!order) {
+          throw new NotFoundException('Order not found');
+        }
+
+        order.driverId = driver.id;
+        order.driverAssignedAt = new Date();
+
+        return await repo.save(order);
+      })
+      .then(async (saved) => {
+        // Emit outside the transaction so the write lock isn't held during the
+        // broadcast's load + socket I/O.
+        this.emitOrderUpdate(saved.id);
+        this.sendAssignmentNotification(
+          driver.id,
+          saved.id,
+          'driver',
+          'A new delivery order has been assigned to you.',
+        );
+        return saved;
       });
-
-      if (!order) {
-        throw new NotFoundException('Order not found');
-      }
-
-      order.driverId = driver.id;
-      order.driverAssignedAt = new Date();
-
-      return await repo.save(order);
-    });
   }
 
   async assignKitchenStaff(orderId: string, staffId: string): Promise<Order> {
@@ -519,47 +555,60 @@ export class OrdersService {
       'KITCHEN_STAFF',
     );
 
-    return await this.dataSource.transaction(async (manager) => {
-      const repo = manager.getRepository(Order);
-      const order = await repo.findOne({
-        where: { id: orderId },
-        lock: { mode: 'pessimistic_write' },
-      });
+    return await this.dataSource
+      .transaction(async (manager) => {
+        const repo = manager.getRepository(Order);
+        const order = await repo.findOne({
+          where: { id: orderId },
+          lock: { mode: 'pessimistic_write' },
+        });
 
-      if (!order) {
-        throw new NotFoundException('Order not found');
-      }
+        if (!order) {
+          throw new NotFoundException('Order not found');
+        }
 
-      if (
-        order.status !== OrderStatus.CONFIRMED &&
-        order.status !== OrderStatus.PREPARING
-      ) {
-        throw new BadRequestException('Order must be confirmed or preparing');
-      }
+        if (
+          order.status !== OrderStatus.CONFIRMED &&
+          order.status !== OrderStatus.PREPARING
+        ) {
+          throw new BadRequestException('Order must be confirmed or preparing');
+        }
 
-      const hasMenuItems =
-        (await manager.getRepository(OrderItem).count({
-          where: { orderId, itemType: 'menu' },
-        })) > 0;
-      if (!hasMenuItems) {
-        throw new BadRequestException('Order has no menu items');
-      }
+        const hasMenuItems =
+          (await manager.getRepository(OrderItem).count({
+            where: { orderId, itemType: 'menu' },
+          })) > 0;
+        if (!hasMenuItems) {
+          throw new BadRequestException('Order has no menu items');
+        }
 
-      if (order.kitchenUserId) {
-        throw new BadRequestException(
-          'Kitchen staff already assigned to this order',
+        if (order.kitchenUserId) {
+          throw new BadRequestException(
+            'Kitchen staff already assigned to this order',
+          );
+        }
+
+        order.kitchenUserId = staff.id;
+        order.kitchenAssignedAt = new Date();
+
+        if (order.status === OrderStatus.CONFIRMED) {
+          order.status = OrderStatus.PREPARING;
+        }
+
+        return await repo.save(order);
+      })
+      .then(async (saved) => {
+        // Emit outside the transaction so the write lock isn't held during the
+        // broadcast's load + socket I/O.
+        this.emitOrderUpdate(saved.id);
+        this.sendAssignmentNotification(
+          staff.id,
+          saved.id,
+          'kitchen',
+          'A new kitchen task has been assigned to you.',
         );
-      }
-
-      order.kitchenUserId = staff.id;
-      order.kitchenAssignedAt = new Date();
-
-      if (order.status === OrderStatus.CONFIRMED) {
-        order.status = OrderStatus.PREPARING;
-      }
-
-      return await repo.save(order);
-    });
+        return saved;
+      });
   }
 
   async assignWarehouseStaff(orderId: string, staffId: string): Promise<Order> {
@@ -569,47 +618,60 @@ export class OrdersService {
       'WAREHOUSE_STAFF',
     );
 
-    return await this.dataSource.transaction(async (manager) => {
-      const repo = manager.getRepository(Order);
-      const order = await repo.findOne({
-        where: { id: orderId },
-        lock: { mode: 'pessimistic_write' },
-      });
+    return await this.dataSource
+      .transaction(async (manager) => {
+        const repo = manager.getRepository(Order);
+        const order = await repo.findOne({
+          where: { id: orderId },
+          lock: { mode: 'pessimistic_write' },
+        });
 
-      if (!order) {
-        throw new NotFoundException('Order not found');
-      }
+        if (!order) {
+          throw new NotFoundException('Order not found');
+        }
 
-      if (
-        order.status !== OrderStatus.CONFIRMED &&
-        order.status !== OrderStatus.PREPARING
-      ) {
-        throw new BadRequestException('Order must be confirmed or preparing');
-      }
+        if (
+          order.status !== OrderStatus.CONFIRMED &&
+          order.status !== OrderStatus.PREPARING
+        ) {
+          throw new BadRequestException('Order must be confirmed or preparing');
+        }
 
-      const hasShopItems =
-        (await manager.getRepository(OrderItem).count({
-          where: { orderId, itemType: 'shop' },
-        })) > 0;
-      if (!hasShopItems) {
-        throw new BadRequestException('Order has no shop items');
-      }
+        const hasShopItems =
+          (await manager.getRepository(OrderItem).count({
+            where: { orderId, itemType: 'shop' },
+          })) > 0;
+        if (!hasShopItems) {
+          throw new BadRequestException('Order has no shop items');
+        }
 
-      if (order.warehouseUserId && order.warehouseUserId !== staff.id) {
-        throw new BadRequestException(
-          'Warehouse staff already assigned to this order',
+        if (order.warehouseUserId && order.warehouseUserId !== staff.id) {
+          throw new BadRequestException(
+            'Warehouse staff already assigned to this order',
+          );
+        }
+
+        order.warehouseUserId = staff.id;
+        order.warehouseAssignedAt = new Date();
+
+        if (order.status === OrderStatus.CONFIRMED) {
+          order.status = OrderStatus.PREPARING;
+        }
+
+        return await repo.save(order);
+      })
+      .then(async (saved) => {
+        // Emit outside the transaction so the write lock isn't held during the
+        // broadcast's load + socket I/O.
+        this.emitOrderUpdate(saved.id);
+        this.sendAssignmentNotification(
+          staff.id,
+          saved.id,
+          'warehouse',
+          'A new warehouse task has been assigned to you.',
         );
-      }
-
-      order.warehouseUserId = staff.id;
-      order.warehouseAssignedAt = new Date();
-
-      if (order.status === OrderStatus.CONFIRMED) {
-        order.status = OrderStatus.PREPARING;
-      }
-
-      return await repo.save(order);
-    });
+        return saved;
+      });
   }
 
   async markPrepared(
@@ -698,7 +760,23 @@ export class OrdersService {
       } catch (error) {
         console.error('Failed to send order status notification:', error);
       }
+
+      // R2 — the assigned driver (if any) should also be told the order is
+      // ready for pickup, so they can head over.
+      if (savedOrder.driverId) {
+        try {
+          await this.notificationsService.sendOrderStatusNotification(
+            savedOrder.driverId,
+            savedOrder.id,
+            OrderStatus.WAITING_FOR_PICKUP,
+          );
+        } catch (error) {
+          console.error('Failed to send pickup-ready notification:', error);
+        }
+      }
     }
+
+    this.emitOrderUpdate(savedOrder.id);
 
     return (await this.orderRepository.findOne({
       where: { id: savedOrder.id },
@@ -728,6 +806,31 @@ export class OrdersService {
     return user;
   }
 
+  /**
+   * Pushes an assignment notification to the newly assigned staff member or
+   * driver. Fire-and-forget: push failures must never break the assignment.
+   */
+  private async sendAssignmentNotification(
+    userId: number,
+    orderId: string,
+    kind: 'driver' | 'kitchen' | 'warehouse',
+    message: string,
+  ): Promise<void> {
+    try {
+      await this.notificationsService.sendNotificationToUser(
+        userId,
+        `New ${kind} assignment`,
+        message,
+        {
+          type: 'order',
+          orderId,
+        },
+      );
+    } catch (error) {
+      console.error(`Failed to send ${kind} assignment notification:`, error);
+    }
+  }
+
   /** Attaches a server-computed `lineTotal` to every order item so clients
    * never perform pricing math. */
   private decorateOrderItems(order: Order): Order {
@@ -739,5 +842,45 @@ export class OrdersService {
       }
     }
     return order;
+  }
+
+  /**
+   * Loads a single order with every relation clients render (items, address,
+   * customer, driver, kitchen/warehouse staff) so a real-time payload carries
+   * everything a client needs without a follow-up API request.
+   */
+  private async loadOrderForBroadcast(orderId: string): Promise<Order> {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+      relations: {
+        items: true,
+        address: true,
+        customer: true,
+        driver: true,
+        kitchenUser: true,
+        warehouseUser: true,
+        createdBy: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return this.decorateOrderItems(order);
+  }
+
+  /**
+   * Emits the `order.updated` socket event to the relevant recipients after any
+   * order mutation. Fire-and-forget: a failure here must never break the REST
+   * flow that triggered it.
+   */
+  private async emitOrderUpdate(orderId: string): Promise<void> {
+    try {
+      const order = await this.loadOrderForBroadcast(orderId);
+      this.ordersGateway.broadcastOrderUpdate(order);
+    } catch (error) {
+      console.error('Failed to broadcast order update:', error);
+    }
   }
 }

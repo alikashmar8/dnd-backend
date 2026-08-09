@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -15,6 +16,7 @@ export class MenuItem {
   @PrimaryGeneratedColumn('increment')
   id!: number;
 
+  @Index()
   @Column({ type: 'int' })
   categoryId!: number;
 

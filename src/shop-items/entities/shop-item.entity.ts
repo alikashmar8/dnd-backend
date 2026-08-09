@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -14,6 +15,7 @@ export class ShopItem {
   @PrimaryGeneratedColumn('increment')
   id!: number;
 
+  @Index()
   @Column({ type: 'int' })
   categoryId!: number;
 

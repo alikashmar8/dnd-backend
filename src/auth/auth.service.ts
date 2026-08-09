@@ -48,6 +48,16 @@ export class AuthService {
       });
       await manager.save(user);
 
+      // If this fcmToken was previously active for another account/device,
+      // deactivate it so the old device stops receiving this user's pushes.
+      if (registerDto.fcmToken) {
+        await manager.update(
+          DeviceToken,
+          { fcmToken: registerDto.fcmToken, status: DeviceTokenStatus.ACTIVE },
+          { status: DeviceTokenStatus.INACTIVE },
+        );
+      }
+
       const accessToken = this.generateAccessToken();
       const deviceToken = manager.create(DeviceToken, {
         userId: user.id,
@@ -114,6 +124,16 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // A device (fcmToken) can only be active for one account at a time. If this
+    // token was registered to a different account/session, revoke it so the old
+    // owner no longer receives this user's push notifications.
+    if (loginDto.fcmToken) {
+      await this.deviceTokenRepository.update(
+        { fcmToken: loginDto.fcmToken, status: DeviceTokenStatus.ACTIVE },
+        { status: DeviceTokenStatus.INACTIVE },
+      );
+    }
+
     const accessToken = this.generateAccessToken();
     const deviceToken = this.deviceTokenRepository.create({
       userId: user.id,
@@ -126,10 +146,12 @@ export class AuthService {
 
     await this.deviceTokenRepository.save(deviceToken);
 
-    // Customers always have a support thread: new registrations get one, and
-    // existing accounts (created before support threads existed) get one lazily
-    // here. Idempotent get-or-create, so it is a no-op once it exists.
-    if (user.role === UserRole.CUSTOMER) {
+    // Ensure a support thread exists for every non-staff role: customers and
+    // operational staff (DRIVER, KITCHEN_STAFF, WAREHOUSE_STAFF, heads) all get
+    // one so they can reach ops support (§19-R8). SUPERADMIN is the support
+    // role itself and is skipped. Idempotent get-or-create, so this is a no-op
+    // once the thread exists.
+    if (user.role !== UserRole.SUPERADMIN) {
       try {
         const chatService = this.moduleRef.get(ChatService, { strict: false });
         const supportUser = await chatService.findSupportTeamUser();

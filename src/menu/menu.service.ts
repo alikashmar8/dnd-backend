@@ -15,6 +15,7 @@ import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
 import { UpdateMenuCategoryDto } from './dto/update-menu-category.dto';
 import { User } from '../users/entities/user.entity.js';
 import { UserRole } from '../enums/user-role.enum.js';
+import { collectCategoryAndDescendants } from '../common/utils/category-tree.js';
 
 @Injectable()
 export class MenuService {
@@ -38,7 +39,7 @@ export class MenuService {
 
     if (currentUser.role !== UserRole.SUPERADMIN) {
       qb.andWhere('menuItem.available = true');
-      qb.andWhere('restaurant.isActive = true');
+      qb.andWhere('(restaurant.id IS NULL OR restaurant.isActive = true)');
     }
 
     if (query.type) {
@@ -69,9 +70,27 @@ export class MenuService {
       }
     }
 
+    if (query.minPrice !== undefined) {
+      qb.andWhere('menuItem.price >= :minPrice', {
+        minPrice: query.minPrice,
+      });
+    }
+
+    if (query.maxPrice !== undefined) {
+      qb.andWhere('menuItem.price <= :maxPrice', {
+        maxPrice: query.maxPrice,
+      });
+    }
+
     if (query.rating) {
       const minRating = Number(query.rating.replace('+', ''));
       qb.andWhere('menuItem.rating >= :minRating', { minRating });
+    }
+
+    if (query.minRating !== undefined) {
+      qb.andWhere('menuItem.rating >= :minRatingNum', {
+        minRatingNum: query.minRating,
+      });
     }
 
     if (query.prepTime) {
@@ -82,8 +101,8 @@ export class MenuService {
 
     if (query.dietary) {
       qb.andWhere(
-        ':dietary = ANY(string_to_array(menuItem.dietaryTags, ","))',
-        { dietary: query.dietary },
+        ':dietary = ANY(string_to_array(menuItem.dietaryTags, :delimiter))',
+        { dietary: query.dietary, delimiter: ',' },
       );
     }
 
@@ -96,11 +115,14 @@ export class MenuService {
       });
     }
 
-    const [items, total] = await qb
-      .skip(skip)
-      .take(take)
-      .orderBy('menuItem.createdAt', 'DESC')
-      .getManyAndCount();
+    if (query.sort === 'popular') {
+      qb.orderBy('menuItem.rating', 'DESC');
+      qb.addOrderBy('menuItem.createdAt', 'DESC');
+    } else {
+      qb.orderBy('menuItem.createdAt', 'DESC');
+    }
+
+    const [items, total] = await qb.skip(skip).take(take).getManyAndCount();
 
     return { items, total, skip, take };
   }
@@ -272,24 +294,7 @@ export class MenuService {
       select: { id: true, parentId: true },
     });
 
-    const ids = new Set<number>([id]);
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const category of categories) {
-        if (
-          category.parentId !== null &&
-          category.parentId !== undefined &&
-          ids.has(category.parentId) &&
-          !ids.has(category.id)
-        ) {
-          ids.add(category.id);
-          changed = true;
-        }
-      }
-    }
-
-    return [...ids];
+    return collectCategoryAndDescendants(categories, id);
   }
 
   private buildCategoryTree(categories: MenuCategory[]): MenuCategory[] {
