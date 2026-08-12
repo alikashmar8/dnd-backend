@@ -16,6 +16,7 @@ import { OrderItem } from '../orders/entities/order-item.entity';
 import { Address } from '../addresses/entities/address.entity';
 import { computeOrderFees, roundMoney } from '../common/constants/pricing';
 import { OrdersService } from '../orders/orders.service';
+import { PaymentMethod } from '../enums/payment-method.enum';
 
 export interface CartSummary {
   subtotal: number;
@@ -285,86 +286,94 @@ export class CartService {
     return { subtotal, ...computeOrderFees(subtotal) };
   }
 
-  async checkoutCart(currentUserId: number, addressId: number): Promise<Order> {
-    const cart = await this.getActiveCart(currentUserId);
+  async checkoutCart(
+    currentUserId: number,
+    addressId: number,
+    paymentMethod: PaymentMethod,
+  ): Promise<Order> {
+      const cart = await this.getActiveCart(currentUserId);
 
-    if (!cart.items || cart.items.length === 0) {
-      throw new BadRequestException('Cannot checkout an empty cart');
-    }
-
-    const address = await this.addressRepository.findOne({
-      where: { id: addressId, userId: currentUserId },
-    });
-
-    if (!address) {
-      throw new NotFoundException('Delivery address not found');
-    }
-
-    const menuItems = cart.items.filter((item) => item.itemType === 'menu');
-    const shopItems = cart.items.filter((item) => item.itemType === 'shop');
-
-    const menuItemIds = menuItems.map((item) => item.itemId);
-    const fetchedMenuItems =
-      menuItemIds.length > 0
-        ? await this.menuItemRepository.find({ where: { id: In(menuItemIds) } })
-        : [];
-
-    const shopItemIds = shopItems.map((item) => item.itemId);
-    const fetchedShopItems =
-      shopItemIds.length > 0
-        ? await this.shopItemRepository.find({ where: { id: In(shopItemIds) } })
-        : [];
-
-    const menuItemMap: Map<number, MenuItem> = new Map(
-      fetchedMenuItems.map((item) => [item.id, item]),
-    );
-    const shopItemMap: Map<number, ShopItem> = new Map(
-      fetchedShopItems.map((item) => [item.id, item]),
-    );
-
-    for (const cartItem of menuItems) {
-      const menuItem = menuItemMap.get(cartItem.itemId);
-      if (!menuItem || !menuItem.available) {
-        throw new BadRequestException('Menu item not available');
+      if (!cart.items || cart.items.length === 0) {
+        throw new BadRequestException('Cannot checkout an empty cart');
       }
-    }
 
-    for (const cartItem of shopItems) {
-      const shopItem = shopItemMap.get(cartItem.itemId);
-      if (!shopItem || !shopItem.available) {
-        throw new BadRequestException('Shop item not available');
-      }
-      if (shopItem.stockQuantity < cartItem.quantity) {
-        throw new BadRequestException(
-          `Insufficient stock for item ${shopItem.name}`,
-        );
-      }
-    }
-
-    const orderItems: Array<{
-      itemId: number;
-      quantity: number;
-      itemType: 'menu' | 'shop';
-    }> = [];
-
-    for (const cartItem of cart.items) {
-      orderItems.push({
-        itemId: cartItem.itemId,
-        quantity: cartItem.quantity,
-        itemType: cartItem.itemType,
+      const address = await this.addressRepository.findOne({
+        where: { id: addressId, userId: currentUserId },
       });
-    }
 
-    const order = await this.ordersService.createOrderFromItems(
-      currentUserId,
-      currentUserId,
-      address.id,
-      orderItems,
-    );
+      if (!address) {
+        throw new NotFoundException('Delivery address not found');
+      }
 
-    cart.active = false;
-    await this.cartRepository.save(cart);
+      const menuItems = cart.items.filter((item) => item.itemType === 'menu');
+      const shopItems = cart.items.filter((item) => item.itemType === 'shop');
 
-    return order;
+      const menuItemIds = menuItems.map((item) => item.itemId);
+      const fetchedMenuItems =
+        menuItemIds.length > 0
+          ? await this.menuItemRepository.find({
+              where: { id: In(menuItemIds) },
+            })
+          : [];
+
+      const shopItemIds = shopItems.map((item) => item.itemId);
+      const fetchedShopItems =
+        shopItemIds.length > 0
+          ? await this.shopItemRepository.find({
+              where: { id: In(shopItemIds) },
+            })
+          : [];
+
+      const menuItemMap: Map<number, MenuItem> = new Map(
+        fetchedMenuItems.map((item) => [item.id, item]),
+      );
+      const shopItemMap: Map<number, ShopItem> = new Map(
+        fetchedShopItems.map((item) => [item.id, item]),
+      );
+
+      for (const cartItem of menuItems) {
+        const menuItem = menuItemMap.get(cartItem.itemId);
+        if (!menuItem || !menuItem.available) {
+          throw new BadRequestException('Menu item not available');
+        }
+      }
+
+      for (const cartItem of shopItems) {
+        const shopItem = shopItemMap.get(cartItem.itemId);
+        if (!shopItem || !shopItem.available) {
+          throw new BadRequestException('Shop item not available');
+        }
+        if (shopItem.stockQuantity < cartItem.quantity) {
+          throw new BadRequestException(
+            `Insufficient stock for item ${shopItem.name}`,
+          );
+        }
+      }
+
+      const orderItems: Array<{
+        itemId: number;
+        quantity: number;
+        itemType: 'menu' | 'shop';
+      }> = [];
+
+      for (const cartItem of cart.items) {
+        orderItems.push({
+          itemId: cartItem.itemId,
+          quantity: cartItem.quantity,
+          itemType: cartItem.itemType,
+        });
+      }
+
+      const order = await this.ordersService.createOrderFromItems(
+        currentUserId,
+        currentUserId,
+        address.id,
+        orderItems,
+      );
+
+      cart.active = false;
+      await this.cartRepository.save(cart);
+
+      return order;
   }
 }

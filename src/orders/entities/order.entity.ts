@@ -14,6 +14,7 @@ import { Address } from '../../addresses/entities/address.entity';
 import { OrderStatus } from '../../enums/order-status.enum';
 import { User } from '../../users/entities/user.entity';
 import { OrderItem } from './order-item.entity';
+import { PaymentMethod } from '../../enums/payment-method.enum';
 
 @Entity('orders')
 @Index('idx_orders_kitchen_queue', ['status', 'kitchenUserId'], {
@@ -50,6 +51,13 @@ export class Order {
 
   @Column({ type: 'int' })
   addressId!: number;
+
+  @Column({
+  type: 'enum',
+  enum: PaymentMethod,
+  default: PaymentMethod.CASH,
+})
+paymentMethod!: PaymentMethod;
 
   @Column({ type: 'int' })
   etaMinutes!: number;

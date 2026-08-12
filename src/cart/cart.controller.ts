@@ -19,6 +19,7 @@ import { UserRole } from '../enums/user-role.enum';
 import { CreateCartItemDto } from './dto/create-cart-item.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
+import { CheckoutDto } from './dto/checkout.dto';
 
 @Controller('carts')
 @UseGuards(AuthGuard, RolesGuard)
@@ -79,10 +80,14 @@ export class CartController {
   }
 
   @Post('checkout')
-  async checkout(
-    @CurrentUser('id') currentUserId: number,
-    @Body('addressId', ParseIntPipe) addressId: number,
-  ) {
-    return await this.cartService.checkoutCart(currentUserId, addressId);
-  }
+async checkout(
+  @CurrentUser('id') currentUserId: number,
+  @Body() checkoutDto: CheckoutDto,
+) {
+  return await this.cartService.checkoutCart(
+    currentUserId,
+    checkoutDto.addressId,
+    checkoutDto.payment_method,
+  );
+}
 }
