@@ -50,4 +50,10 @@ export class GetShopItemsQueryDto extends PaginationDto {
   @IsOptional()
   @IsIn(['newest', 'popular'])
   sort?: 'newest' | 'popular';
+
+  @IsOptional()
+  is_new_item ?: boolean;
+
+  @IsOptional()
+  is_popular_item ?: boolean;
 }
