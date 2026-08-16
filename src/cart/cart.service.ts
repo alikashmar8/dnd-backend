@@ -4,18 +4,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
-import { Cart } from './entities/cart.entity';
-import { CartItem } from './entities/cart-item.entity';
+import { DataSource, Repository } from 'typeorm';
+import { Address } from '../addresses/entities/address.entity';
+import { computeOrderFees, roundMoney } from '../common/constants/pricing';
 import { MenuItem } from '../menu/entities/menu-item.entity';
+import { Order } from '../orders/entities/order.entity';
+import { OrdersService } from '../orders/orders.service';
 import { ShopItem } from '../shop-items/entities/shop-item.entity';
 import { CreateCartItemDto } from './dto/create-cart-item.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
-import { Order } from '../orders/entities/order.entity';
-import { OrderItem } from '../orders/entities/order-item.entity';
-import { Address } from '../addresses/entities/address.entity';
-import { computeOrderFees, roundMoney } from '../common/constants/pricing';
-import { OrdersService } from '../orders/orders.service';
+import { CartItem } from './entities/cart-item.entity';
+import { Cart } from './entities/cart.entity';
 
 export interface CartSummary {
   subtotal: number;
@@ -35,12 +34,6 @@ export class CartService {
     private readonly menuItemRepository: Repository<MenuItem>,
     @InjectRepository(ShopItem)
     private readonly shopItemRepository: Repository<ShopItem>,
-    @InjectRepository(Order)
-    private readonly orderRepository: Repository<Order>,
-    @InjectRepository(OrderItem)
-    private readonly orderItemRepository: Repository<OrderItem>,
-    @InjectRepository(Address)
-    private readonly addressRepository: Repository<Address>,
     private readonly dataSource: DataSource,
     private readonly ordersService: OrdersService,
   ) {}
@@ -286,84 +279,62 @@ export class CartService {
   }
 
   async checkoutCart(currentUserId: number, addressId: number): Promise<Order> {
-    const cart = await this.getActiveCart(currentUserId);
+    // One transaction: the cart row is locked (`pessimistic_write`) so two
+    // concurrent checkouts of the same cart serialize — the second sees the
+    // cart deactivated and fails instead of creating a duplicate order.
+    const order = await this.dataSource.transaction(async (manager) => {
+      const cart = await manager.findOne(Cart, {
+        where: { userId: currentUserId, active: true },
+        lock: { mode: 'pessimistic_write' },
+        // `Cart.items` is eager; a `FOR UPDATE` query cannot join an outer
+        // relation (Postgres: "FOR UPDATE cannot be applied to the nullable
+        // side of an outer join"). Items are fetched explicitly below.
+        loadEagerRelations: false,
+      });
 
-    if (!cart.items || cart.items.length === 0) {
-      throw new BadRequestException('Cannot checkout an empty cart');
-    }
+      if (!cart) {
+        throw new BadRequestException('Cannot checkout an empty cart');
+      }
 
-    const address = await this.addressRepository.findOne({
-      where: { id: addressId, userId: currentUserId },
+      const cartItems = await manager.find(CartItem, {
+        where: { cartId: cart.id },
+      });
+
+      if (cartItems.length === 0) {
+        throw new BadRequestException('Cannot checkout an empty cart');
+      }
+
+      const address = await manager.findOne(Address, {
+        where: { id: addressId, userId: currentUserId },
+      });
+
+      if (!address) {
+        throw new NotFoundException('Delivery address not found');
+      }
+
+      const orderItems = cartItems.map((item) => ({
+        itemId: item.itemId,
+        quantity: item.quantity,
+        itemType: item.itemType,
+      }));
+
+      // Stock validation + decrement happens authoritatively inside this
+      // transaction against row-locked shop items.
+      const created = await this.ordersService.createOrderFromItems(
+        currentUserId,
+        currentUserId,
+        address.id,
+        orderItems,
+        manager,
+      );
+
+      cart.active = false;
+      await manager.save(cart);
+
+      return created;
     });
 
-    if (!address) {
-      throw new NotFoundException('Delivery address not found');
-    }
-
-    const menuItems = cart.items.filter((item) => item.itemType === 'menu');
-    const shopItems = cart.items.filter((item) => item.itemType === 'shop');
-
-    const menuItemIds = menuItems.map((item) => item.itemId);
-    const fetchedMenuItems =
-      menuItemIds.length > 0
-        ? await this.menuItemRepository.find({ where: { id: In(menuItemIds) } })
-        : [];
-
-    const shopItemIds = shopItems.map((item) => item.itemId);
-    const fetchedShopItems =
-      shopItemIds.length > 0
-        ? await this.shopItemRepository.find({ where: { id: In(shopItemIds) } })
-        : [];
-
-    const menuItemMap: Map<number, MenuItem> = new Map(
-      fetchedMenuItems.map((item) => [item.id, item]),
-    );
-    const shopItemMap: Map<number, ShopItem> = new Map(
-      fetchedShopItems.map((item) => [item.id, item]),
-    );
-
-    for (const cartItem of menuItems) {
-      const menuItem = menuItemMap.get(cartItem.itemId);
-      if (!menuItem || !menuItem.available) {
-        throw new BadRequestException('Menu item not available');
-      }
-    }
-
-    for (const cartItem of shopItems) {
-      const shopItem = shopItemMap.get(cartItem.itemId);
-      if (!shopItem || !shopItem.available) {
-        throw new BadRequestException('Shop item not available');
-      }
-      if (shopItem.stockQuantity < cartItem.quantity) {
-        throw new BadRequestException(
-          `Insufficient stock for item ${shopItem.name}`,
-        );
-      }
-    }
-
-    const orderItems: Array<{
-      itemId: number;
-      quantity: number;
-      itemType: 'menu' | 'shop';
-    }> = [];
-
-    for (const cartItem of cart.items) {
-      orderItems.push({
-        itemId: cartItem.itemId,
-        quantity: cartItem.quantity,
-        itemType: cartItem.itemType,
-      });
-    }
-
-    const order = await this.ordersService.createOrderFromItems(
-      currentUserId,
-      currentUserId,
-      address.id,
-      orderItems,
-    );
-
-    cart.active = false;
-    await this.cartRepository.save(cart);
+    this.ordersService.emitOrderUpdate(order.id);
 
     return order;
   }

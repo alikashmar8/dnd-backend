@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, UsePipes, ValidationPipe } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -9,8 +9,10 @@ import {
 } from '@nestjs/websockets';
 import { Socket } from 'socket.io';
 import { AuthService } from '../auth/auth.service';
-import { TrackingService } from './tracking.service';
+import { UserRole } from '../enums/user-role.enum';
 import { User } from '../users/entities/user.entity';
+import { UpdateLocationDto } from './dto/update-location.dto';
+import { TrackingService } from './tracking.service';
 
 @WebSocketGateway({ namespace: 'tracking', cors: true })
 @Injectable()
@@ -36,8 +38,12 @@ export class TrackingGateway
     try {
       const user = await this.authService.validateUserByToken(token);
       client.data.user = user;
-      void client.join(`user_${user.id}`);
+      await client.join(`user_${user.id}`);
       this.logger.log(`Tracking connected: user=${user.id} role=${user.role}`);
+      // Ack so clients know the connection is fully established (auth resolved
+      // and rooms joined) before they emit subscribe/location events — this is
+      // also what a client uses to re-subscribe after a socket reconnect.
+      client.emit('connected', { userId: user.id });
     } catch {
       this.logger.warn('Tracking connection rejected: invalid token');
       client.disconnect();
@@ -49,15 +55,32 @@ export class TrackingGateway
     this.logger.log(`Tracking disconnected: user=${user?.id ?? 'unknown'}`);
   }
 
+  // Pipes registered via `useGlobalPipes` do not cover WebSocket gateway
+  // message payloads, so the DTO is validated explicitly on the handler. This
+  // is the security boundary that rejects NaN/Infinity/out-of-range coords.
+  @UsePipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  )
   @SubscribeMessage('driver:location:update')
   async handleLocationUpdate(
     @ConnectedSocket() client: Socket,
-    @MessageBody()
-    payload: { latitude: number; longitude: number },
+    @MessageBody() payload: UpdateLocationDto,
   ) {
     const user = client.data.user as User | undefined;
     if (!user) {
       client.emit('error', 'Unauthorized');
+      return;
+    }
+
+    // Only a driver may publish their own location. The driver identity is the
+    // authenticated socket's user (never a client-supplied id), so Driver A can
+    // never write Driver B's location.
+    if (user.role !== UserRole.DRIVER) {
+      client.emit('error', 'Only drivers can update their location');
       return;
     }
 
@@ -67,6 +90,9 @@ export class TrackingGateway
       payload.longitude,
     );
 
+    // Broadcast to the driver's room. Only subscribers who passed the
+    // `canViewDriverLocation` authorization check are members of that room, so
+    // this is scoped to the driver's own order viewers (customer + admin).
     void client.to(`user_${user.id}`).emit('driver:location:broadcast', {
       driverId: user.id,
       latitude: payload.latitude,

@@ -258,6 +258,8 @@ export class SeedService {
       available: true,
       prepTimeMinutes: 20,
       restaurantId: restaurant1.id,
+      isDailyDish: true,
+      isHealthyItem: false,
     });
 
     const menuItem2 = this.menuItemRepository.create({
@@ -269,6 +271,8 @@ export class SeedService {
       available: true,
       prepTimeMinutes: 20,
       restaurantId: restaurant1.id,
+      isDailyDish: true,
+      isHealthyItem: false,
     });
 
     const menuItem3 = this.menuItemRepository.create({
@@ -280,6 +284,8 @@ export class SeedService {
       available: true,
       prepTimeMinutes: 10,
       restaurantId: null,
+      isDailyDish: false,
+      isHealthyItem: false,
     });
 
     const menuItem4 = this.menuItemRepository.create({
@@ -291,6 +297,8 @@ export class SeedService {
       available: true,
       prepTimeMinutes: 25,
       restaurantId: restaurant2.id,
+      isDailyDish: false,
+      isHealthyItem: true,
     });
 
     await this.menuItemRepository.save([
@@ -368,6 +376,8 @@ export class SeedService {
       image: 'https://example.com/milk.jpg',
       stockQuantity: 50,
       unit: 'gallon',
+      isNewItem: true,
+      isPopularItem: false,
     });
 
     const shopItem2 = this.shopItemRepository.create({
@@ -378,6 +388,8 @@ export class SeedService {
       image: 'https://example.com/bread.jpg',
       stockQuantity: 30,
       unit: 'loaf',
+      isNewItem: true,
+      isPopularItem: false,
     });
 
     const shopItem3 = this.shopItemRepository.create({
@@ -388,6 +400,8 @@ export class SeedService {
       image: 'https://example.com/eggs.jpg',
       stockQuantity: 40,
       unit: 'dozen',
+      isNewItem: false,
+      isPopularItem: true,
     });
 
     const shopItem4 = this.shopItemRepository.create({
@@ -398,6 +412,8 @@ export class SeedService {
       image: 'https://example.com/apples.jpg',
       stockQuantity: 25,
       unit: 'lb',
+      isNewItem: false,
+      isPopularItem: true,
     });
 
     await this.shopItemRepository.save([

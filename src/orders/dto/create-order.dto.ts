@@ -1,7 +1,9 @@
 import {
   IsArray,
+  IsIn,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -15,6 +17,10 @@ class OrderItemDto {
   @IsInt()
   @Min(1)
   quantity!: number;
+
+  @IsOptional()
+  @IsIn(['menu', 'shop'])
+  itemType?: 'menu' | 'shop';
 }
 
 export class CreateOrderDto {

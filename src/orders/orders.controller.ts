@@ -8,19 +8,19 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { OrdersService } from './orders.service';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import { AuthGuard } from '../common/guards/auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
-import { Roles } from '../common/decorators/roles.decorator';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UserRole } from '../enums/user-role.enum';
-import { CreateOrderDto } from './dto/create-order.dto';
-import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
-import { OrdersQueryDto } from './dto/orders-query.dto';
-import { AssignStaffDto } from './dto/assign-staff.dto';
-import { AssignDriverDto } from './dto/assign-driver.dto';
-import { MarkPreparedDto } from './dto/mark-prepared.dto';
 import { User } from '../users/entities/user.entity';
+import { AssignDriverDto } from './dto/assign-driver.dto';
+import { AssignStaffDto } from './dto/assign-staff.dto';
+import { CreateOrderDto } from './dto/create-order.dto';
+import { MarkPreparedDto } from './dto/mark-prepared.dto';
+import { OrdersQueryDto } from './dto/orders-query.dto';
+import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
+import { OrdersService } from './orders.service';
 
 @Controller('orders')
 @UseGuards(AuthGuard)
@@ -48,6 +48,16 @@ export class OrdersController {
     @Body() createOrderDto: CreateOrderDto,
   ) {
     return await this.ordersService.create(currentUser, createOrderDto);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.SUPERADMIN)
+  @Post('quote')
+  async quote(
+    @CurrentUser() currentUser: User,
+    @Body() createOrderDto: CreateOrderDto,
+  ) {
+    return await this.ordersService.quoteOrder(currentUser, createOrderDto);
   }
 
   @Patch(':id/status')

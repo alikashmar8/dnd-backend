@@ -4,6 +4,9 @@ import { Repository } from 'typeorm';
 import { Order } from '../orders/entities/order.entity';
 import { OrderItem } from '../orders/entities/order-item.entity';
 import { User } from '../users/entities/user.entity';
+import { Restaurant } from '../restaurants/entities/restaurant.entity';
+import { MenuItem } from '../menu/entities/menu-item.entity';
+import { ShopItem } from '../shop-items/entities/shop-item.entity';
 import { OrderStatus } from '../enums/order-status.enum';
 import { UserRole } from '../enums/user-role.enum';
 import { DateRangeDto } from './dto/date-range.dto';
@@ -19,6 +22,12 @@ export class AnalyticsService {
     private readonly orderItemRepository: Repository<OrderItem>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Restaurant)
+    private readonly restaurantRepository: Repository<Restaurant>,
+    @InjectRepository(MenuItem)
+    private readonly menuItemRepository: Repository<MenuItem>,
+    @InjectRepository(ShopItem)
+    private readonly shopItemRepository: Repository<ShopItem>,
   ) {}
 
   async getRevenueMetrics(dateRange?: DateRangeDto) {
@@ -46,7 +55,7 @@ export class AnalyticsService {
     const results = await queryBuilder
       .groupBy('DATE(order.createdAt)')
       .orderBy('DATE(order.createdAt)', 'DESC')
-      .getRawMany();
+      .getRawMany<{ date: string; orderCount: string; totalRevenue: string }>();
 
     const totalRevenue = results.reduce(
       (sum, row) => sum + Number(row.totalRevenue || 0),
@@ -83,9 +92,14 @@ export class AnalyticsService {
       });
     }
 
-    const results = await queryBuilder.groupBy('order.status').getRawMany();
+    const results = await queryBuilder.groupBy('order.status').getRawMany<{
+      status: OrderStatus;
+      count: string;
+      totalRevenue: string;
+    }>();
 
-    const statusMap: Record<string, any> = {};
+    const statusMap: Record<string, { count: number; totalRevenue: number }> =
+      {};
     Object.values(OrderStatus).forEach((status) => {
       statusMap[status] = { count: 0, totalRevenue: 0 };
     });
@@ -98,7 +112,7 @@ export class AnalyticsService {
     });
 
     const totalOrders = Object.values(statusMap).reduce(
-      (sum: number, stat: any) => sum + stat.count,
+      (sum, stat) => sum + stat.count,
       0,
     );
 
@@ -113,7 +127,7 @@ export class AnalyticsService {
       .createQueryBuilder('orderItem')
       .leftJoin('orderItem.order', 'order')
       .select([
-        'orderItem.itemName as itemName',
+        'orderItem.name as itemName',
         'orderItem.itemType as itemType',
         'SUM(orderItem.quantity) as totalQuantity',
         'SUM(orderItem.price * orderItem.quantity) as totalRevenue',
@@ -134,7 +148,7 @@ export class AnalyticsService {
     }
 
     const results = await orderItemQuery
-      .groupBy('orderItem.itemName, orderItem.itemType')
+      .groupBy('orderItem.name, orderItem.itemType')
       .orderBy('SUM(orderItem.quantity)', 'DESC')
       .limit(limit)
       .getRawMany();
@@ -242,15 +256,56 @@ export class AnalyticsService {
   }
 
   async getOverview(dateRange?: DateRangeDto) {
-    const [revenue, orders, users, merchants, drivers] = await Promise.all([
+    const [
+      revenue,
+      orders,
+      users,
+      merchants,
+      drivers,
+      totalRestaurants,
+      totalMenuItems,
+      totalShopItems,
+      totalDrivers,
+    ] = await Promise.all([
       this.getRevenueMetrics(dateRange),
       this.getOrderStatistics(dateRange),
       this.getUserStatistics(dateRange),
       this.getMerchantStatistics(dateRange),
       this.getDriverStatistics(dateRange),
+      this.restaurantRepository.count(),
+      this.menuItemRepository.count(),
+      this.shopItemRepository.count(),
+      this.userRepository.count({ where: { role: UserRole.DRIVER } }),
     ]);
 
+    // Canonical dashboard-facing shape: flat totals + the time/status series
+    // the admin dashboard renders, alongside the richer nested metrics.
+    const totals = {
+      totalOrders: orders.totalOrders,
+      totalRevenue: revenue.summary.totalRevenue,
+      totalUsers: users.totalUsers,
+      totalRestaurants,
+      totalDrivers,
+      totalMenuItems,
+      totalShopItems,
+    };
+
+    const revenueByDay = (revenue.daily || []).map((row) => ({
+      date: row.date,
+      revenue: Number(row.totalRevenue || 0),
+    }));
+
+    const ordersByStatus = Object.entries(orders.byStatus).map(
+      ([status, stat]) => ({
+        status,
+        count: Number(stat.count || 0),
+      }),
+    );
+
     return {
+      totals,
+      revenueByDay,
+      ordersByStatus,
       revenue,
       orders,
       users,

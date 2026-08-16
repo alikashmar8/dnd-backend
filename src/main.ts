@@ -6,9 +6,13 @@ import { AssetUrlInterceptor } from './common/interceptors/asset-url.interceptor
 import { TypeOrmExceptionFilter } from './common/filters/typeorm-exception.filter';
 import { LocaleMiddleware } from './common/middleware/locale.middleware';
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
+import { parseCorsOrigins } from './common/cors-origins';
+import { validateProductionConfig } from './common/production-config.validation';
 import { StorageService } from './storage/storage.service';
 
 async function bootstrap() {
+  validateProductionConfig();
+
   const app = await NestFactory.create(AppModule);
 
   // Global prefix
@@ -22,9 +26,10 @@ async function bootstrap() {
     new RequestLoggerMiddleware().use.bind(new RequestLoggerMiddleware()),
   );
 
-  // CORS configuration
+  // CORS configuration. Never emits a literal `*` with credentials — an
+  // allowlist is reflected via `parseCorsOrigins` (see the helper docs).
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: parseCorsOrigins(process.env.CORS_ORIGIN),
     credentials: true,
   });
 

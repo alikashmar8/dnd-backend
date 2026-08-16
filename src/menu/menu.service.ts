@@ -5,17 +5,17 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { MenuItem } from './entities/menu-item.entity.js';
-import { MenuCategory } from './entities/menu-category.entity.js';
-import { Restaurant } from '../restaurants/entities/restaurant.entity.js';
-import { GetMenuItemsQueryDto } from './dto/get-menu-items-query.dto.js';
-import { CreateMenuItemDto } from './dto/create-menu-item.dto';
-import { UpdateMenuItemDto } from './dto/update-menu-item.dto.js';
-import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
-import { UpdateMenuCategoryDto } from './dto/update-menu-category.dto';
-import { User } from '../users/entities/user.entity.js';
-import { UserRole } from '../enums/user-role.enum.js';
 import { collectCategoryAndDescendants } from '../common/utils/category-tree.js';
+import { UserRole } from '../enums/user-role.enum.js';
+import { Restaurant } from '../restaurants/entities/restaurant.entity.js';
+import { User } from '../users/entities/user.entity.js';
+import { CreateMenuCategoryDto } from './dto/create-menu-category.dto';
+import { CreateMenuItemDto } from './dto/create-menu-item.dto';
+import { GetMenuItemsQueryDto } from './dto/get-menu-items-query.dto.js';
+import { UpdateMenuCategoryDto } from './dto/update-menu-category.dto';
+import { UpdateMenuItemDto } from './dto/update-menu-item.dto.js';
+import { MenuCategory } from './entities/menu-category.entity.js';
+import { MenuItem } from './entities/menu-item.entity.js';
 
 @Injectable()
 export class MenuService {
@@ -113,6 +113,14 @@ export class MenuService {
       qb.andWhere('menuItem.categoryId IN (:...categoryIds)', {
         categoryIds,
       });
+    }
+
+    if (query.is_daily_dish === true) {
+      qb.andWhere('menuItem.isDailyDish = true');
+    }
+
+    if (query.is_healthy_item === true) {
+      qb.andWhere('menuItem.isHealthyItem = true');
     }
 
     if (query.sort === 'popular') {

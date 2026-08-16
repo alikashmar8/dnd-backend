@@ -58,4 +58,12 @@ export class CreateShopItemDto {
   @IsOptional()
   @IsBoolean()
   available?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isNewItem?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isPopularItem?: boolean;
 }

@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { HttpThrottlerGuard } from './common/guards/http-throttler.guard';
 import { databaseConfig } from './config/database.config';
 import { appConfig } from './config/app.config';
 import { redisConfig } from './config/redis.config';
@@ -43,7 +45,7 @@ import { AdsModule } from './ads/ads.module';
       ],
     }),
     ScheduleModule.forRoot(),
-    ThrottlerModule.forRoot([{ ttl: 900000, limit: 3 }]),
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }]),
     FirebaseAdminModule,
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -76,6 +78,6 @@ import { AdsModule } from './ads/ads.module';
     AdsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, { provide: APP_GUARD, useClass: HttpThrottlerGuard }],
 })
 export class AppModule {}

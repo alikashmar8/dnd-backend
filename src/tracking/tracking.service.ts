@@ -1,11 +1,11 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import Redis from 'ioredis';
-import { Order } from '../orders/entities/order.entity';
+import { Repository } from 'typeorm';
 import { OrderStatus } from '../enums/order-status.enum';
 import { UserRole } from '../enums/user-role.enum';
+import { Order } from '../orders/entities/order.entity';
 import { User } from '../users/entities/user.entity';
 
 export interface DriverLocation {
@@ -37,7 +37,11 @@ export class TrackingService implements OnModuleDestroy {
     this.redis = new Redis({ host, port, password, lazyConnect: true });
 
     this.redis.connect().catch((err: Error) => {
-      this.logger.error(`Failed to connect to Redis: ${err.message}`);
+      // Quitting during an in-flight connect() is a normal shutdown race
+      // (status becomes 'end'), not a real connectivity failure.
+      if (this.redis.status !== 'end') {
+        this.logger.error(`Failed to connect to Redis: ${err.message}`);
+      }
     });
   }
 
@@ -78,7 +82,13 @@ export class TrackingService implements OnModuleDestroy {
   }
 
   async onModuleDestroy() {
-    await this.redis.quit();
+    try {
+      if (this.redis.status !== 'end') {
+        await this.redis.quit();
+      }
+    } catch {
+      this.redis.disconnect();
+    }
   }
 
   async updateLocation(

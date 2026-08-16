@@ -1,17 +1,16 @@
+import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
+  IsEnum,
   IsIn,
   IsInt,
   IsOptional,
   IsString,
-  IsEnum,
   Max,
   Min,
 } from 'class-validator';
-import { Type } from 'class-transformer';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { MealType } from '../../enums/meal-type.enum.js';
-import { IsBoolean } from 'class-validator';
-import { Transform } from 'class-transformer';
 
 export class GetMenuItemsQueryDto extends PaginationDto {
   @IsOptional()
@@ -72,7 +71,12 @@ export class GetMenuItemsQueryDto extends PaginationDto {
   categoryId?: number;
 
   @IsOptional()
-@Transform(({ value }) => value === 'true')
-@IsBoolean()
-is_daily_dish?: boolean;
+  @Transform(({ value }) => value === 'true')
+  @IsBoolean()
+  is_daily_dish?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true')
+  @IsBoolean()
+  is_healthy_item?: boolean;
 }

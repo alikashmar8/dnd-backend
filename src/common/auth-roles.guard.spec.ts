@@ -40,6 +40,7 @@ const mockOrdersService = {
 
 const mockCartService = {
   getActiveCart: jest.fn(() => Promise.resolve({ id: 1, active: true })),
+  getActiveCartDetails: jest.fn(() => Promise.resolve({ id: 1, active: true })),
   listCartItems: jest.fn(() => Promise.resolve([{ id: 1 }])),
   addItemToCart: jest.fn(() => Promise.resolve({ id: 1 })),
   updateCartItem: jest.fn(() => Promise.resolve({ id: 1 })),

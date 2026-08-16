@@ -51,6 +51,28 @@ export class Order {
   @Column({ type: 'int' })
   addressId!: number;
 
+  /** Historical delivery-address snapshot captured at order creation. The
+   * `address` relation points at the customer's live row (which they may edit
+   * or delete); these fields keep the address that was actually used for this
+   * order so historical orders never change retroactively. */
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  deliveryTitle!: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  deliveryCity!: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  deliveryStreet!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  deliveryDescription!: string | null;
+
+  @Column({ type: 'decimal', precision: 10, scale: 8, nullable: true })
+  deliveryLatitude!: number | null;
+
+  @Column({ type: 'decimal', precision: 11, scale: 8, nullable: true })
+  deliveryLongitude!: number | null;
+
   @Column({ type: 'int' })
   etaMinutes!: number;
 

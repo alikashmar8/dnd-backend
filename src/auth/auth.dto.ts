@@ -30,7 +30,8 @@ export class RegisterDto {
 }
 
 export class LoginDto {
-  @IsPhoneNumber()
+  // @IsPhoneNumber()
+  @IsNotEmpty()
   phone!: string;
 
   @IsString()

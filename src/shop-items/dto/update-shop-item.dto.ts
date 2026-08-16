@@ -52,4 +52,12 @@ export class UpdateShopItemDto {
   @IsOptional()
   @IsNumber()
   categoryId?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isNewItem?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isPopularItem?: boolean;
 }

@@ -1,11 +1,12 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { Address } from '../addresses/entities/address.entity';
 import { computeOrderFees, roundMoney } from '../common/constants/pricing';
 import { OrderStatus } from '../enums/order-status.enum';
@@ -223,6 +224,134 @@ export class OrdersService {
     );
   }
 
+  /** Server-side price preview for the admin order form. Mirrors the exact
+   * pricing/availability logic of `createOrderFromItems` (same constants via
+   * `computeOrderFees`) so the quoted preview always equals the created order.
+   * Read-only: no stock changes, no order rows. */
+  async quoteOrder(
+    currentUser: User,
+    createOrderDto: CreateOrderDto,
+  ): Promise<{
+    items: Array<{
+      itemId: number;
+      itemType: 'menu' | 'shop';
+      name: string;
+      nameAr: string | null;
+      price: number;
+      quantity: number;
+      lineTotal: number;
+    }>;
+    subtotal: number;
+    tax: number;
+    deliveryFee: number;
+    total: number;
+  }> {
+    if (!createOrderDto.customerId) {
+      throw new BadRequestException('customerId is required');
+    }
+
+    const address = await this.addressRepository.findOne({
+      where: {
+        id: createOrderDto.addressId,
+        userId: createOrderDto.customerId,
+      },
+    });
+
+    if (!address) {
+      throw new NotFoundException('Delivery address not found');
+    }
+
+    const menuItemsToFetch = createOrderDto.items
+      .filter((item) => item.itemType === 'menu' || !item.itemType)
+      .map((item) => item.itemId);
+    const shopItemsToFetch = createOrderDto.items
+      .filter((item) => item.itemType === 'shop')
+      .map((item) => item.itemId);
+
+    const fetchedMenuItems =
+      menuItemsToFetch.length > 0
+        ? await this.menuItemRepository.find({
+            where: { id: In(menuItemsToFetch) },
+          })
+        : [];
+    const fetchedShopItems =
+      shopItemsToFetch.length > 0
+        ? await this.shopItemRepository.find({
+            where: { id: In(shopItemsToFetch) },
+          })
+        : [];
+
+    const menuItemMap = new Map(
+      fetchedMenuItems.map((item) => [item.id, item]),
+    );
+    const shopItemMap = new Map(
+      fetchedShopItems.map((item) => [item.id, item]),
+    );
+
+    let subtotal = 0;
+    const items: Array<{
+      itemId: number;
+      itemType: 'menu' | 'shop';
+      name: string;
+      nameAr: string | null;
+      price: number;
+      quantity: number;
+      lineTotal: number;
+    }> = [];
+
+    for (const itemDto of createOrderDto.items) {
+      const itemType = itemDto.itemType || 'menu';
+
+      if (itemType === 'menu') {
+        const menuItem = menuItemMap.get(itemDto.itemId);
+
+        if (!menuItem || !menuItem.available) {
+          throw new NotFoundException(
+            `Menu item ${itemDto.itemId} not available`,
+          );
+        }
+
+        subtotal += Number(menuItem.price) * itemDto.quantity;
+        items.push({
+          itemId: menuItem.id,
+          itemType: 'menu',
+          name: menuItem.name,
+          nameAr: menuItem.nameAr ?? null,
+          price: Number(menuItem.price),
+          quantity: itemDto.quantity,
+          lineTotal: roundMoney(Number(menuItem.price) * itemDto.quantity),
+        });
+      } else {
+        const shopItem = shopItemMap.get(itemDto.itemId);
+
+        if (!shopItem || !shopItem.available) {
+          throw new NotFoundException(
+            `Shop item ${itemDto.itemId} not available`,
+          );
+        }
+
+        if (shopItem.stockQuantity < itemDto.quantity) {
+          throw new BadRequestException(
+            `Insufficient stock for item ${shopItem.name}`,
+          );
+        }
+
+        subtotal += Number(shopItem.price) * itemDto.quantity;
+        items.push({
+          itemId: shopItem.id,
+          itemType: 'shop',
+          name: shopItem.name,
+          nameAr: shopItem.nameAr ?? null,
+          price: Number(shopItem.price),
+          quantity: itemDto.quantity,
+          lineTotal: roundMoney(Number(shopItem.price) * itemDto.quantity),
+        });
+      }
+    }
+
+    return { items, subtotal, ...computeOrderFees(subtotal) };
+  }
+
   async createOrderFromItems(
     customerId: number,
     createdById: number | null,
@@ -232,11 +361,23 @@ export class OrdersService {
       quantity: number;
       itemType?: 'menu' | 'shop';
     }>,
+    managerOverride?: EntityManager,
   ): Promise<Order> {
-    let subtotal = 0;
-    const itemsToInsert: OrderItem[] = [];
+    const run = async (manager: EntityManager): Promise<Order> => {
+      let subtotal = 0;
+      const itemsToInsert: OrderItem[] = [];
 
-    const createdOrder = await this.dataSource.transaction(async (manager) => {
+      // Re-load the address inside the transaction so the snapshot below
+      // reflects the row as of order time (the caller's earlier read was just
+      // an ownership check).
+      const deliveryAddress = await manager.findOne(Address, {
+        where: { id: addressId },
+      });
+
+      if (!deliveryAddress) {
+        throw new NotFoundException('Delivery address not found');
+      }
+
       const menuItemsToFetch = items
         .filter((item) => item.itemType === 'menu' || !item.itemType)
         .map((item) => item.itemId);
@@ -250,18 +391,26 @@ export class OrdersService {
               where: { id: In(menuItemsToFetch) },
             })
           : [];
-      const fetchedShopItems =
-        shopItemsToFetch.length > 0
-          ? await manager.find(ShopItem, {
-              where: { id: In(shopItemsToFetch) },
-            })
-          : [];
+
+      // Lock every shop row (`pessimistic_write`) so concurrent checkouts
+      // serialize on the last unit of stock instead of reading a stale count.
+      // The authoritative stock check happens below against the locked row.
+      const fetchedShopItems = await Promise.all(
+        shopItemsToFetch.map((id) =>
+          manager.findOne(ShopItem, {
+            where: { id },
+            lock: { mode: 'pessimistic_write' },
+          }),
+        ),
+      );
 
       const menuItemMap = new Map(
         fetchedMenuItems.map((item) => [item.id, item]),
       );
       const shopItemMap = new Map(
-        fetchedShopItems.map((item) => [item.id, item]),
+        fetchedShopItems
+          .filter((item): item is ShopItem => item !== null)
+          .map((item) => [item.id, item]),
       );
 
       for (const itemDto of items) {
@@ -321,13 +470,7 @@ export class OrdersService {
 
       const { tax, deliveryFee, total } = computeOrderFees(subtotal);
       const etaMinutes = 40;
-      const today = new Date();
-      const orderId = `ORD-${today.getFullYear()}-${(today.getMonth() + 1)
-        .toString()
-        .padStart(
-          2,
-          '0',
-        )}-${today.getDate().toString().padStart(2, '0')}-${Math.floor(Math.random() * 10000)}`;
+      const orderId = this.generateOrderId();
 
       let order = this.orderRepository.create({
         id: orderId,
@@ -335,6 +478,12 @@ export class OrdersService {
         createdById,
         status: OrderStatus.PENDING,
         addressId,
+        deliveryTitle: deliveryAddress.title,
+        deliveryCity: deliveryAddress.city,
+        deliveryStreet: deliveryAddress.street,
+        deliveryDescription: deliveryAddress.description ?? null,
+        deliveryLatitude: Number(deliveryAddress.latitude),
+        deliveryLongitude: Number(deliveryAddress.longitude),
         etaMinutes,
         subtotal,
         tax,
@@ -351,11 +500,26 @@ export class OrdersService {
         await manager.save(orderItem);
       }
 
-      return order;
-    });
+      const fullOrder = await manager.findOne(Order, {
+        where: { id: order.id },
+        relations: { items: true, address: true },
+      });
+
+      return fullOrder ?? order;
+    };
+
+    // When a manager is supplied (checkout), the caller owns the transaction
+    // and is responsible for emitting the socket update after it commits.
+    const createdOrder = managerOverride
+      ? await run(managerOverride)
+      : await this.withIdCollisionRetry(() => this.dataSource.transaction(run));
 
     if (!createdOrder) {
       throw new BadRequestException('Failed to create order');
+    }
+
+    if (managerOverride) {
+      return createdOrder;
     }
 
     const order = await this.orderRepository.findOne({
@@ -517,6 +681,8 @@ export class OrdersService {
       'DRIVER',
     );
 
+    let previousDriverId: number | null;
+
     return await this.dataSource
       .transaction(async (manager) => {
         const repo = manager.getRepository(Order);
@@ -529,8 +695,20 @@ export class OrdersService {
           throw new NotFoundException('Order not found');
         }
 
+        if (
+          order.status === OrderStatus.DELIVERED ||
+          order.status === OrderStatus.COMPLETED ||
+          order.status === OrderStatus.CANCELLED
+        ) {
+          throw new ConflictException(
+            `Cannot assign a driver to an order with status '${order.status}'`,
+          );
+        }
+
+        const previousDriver = order.driverId;
         order.driverId = driver.id;
         order.driverAssignedAt = new Date();
+        previousDriverId = previousDriver;
 
         return await repo.save(order);
       })
@@ -544,6 +722,14 @@ export class OrdersService {
           'driver',
           'A new delivery order has been assigned to you.',
         );
+        if (previousDriverId && previousDriverId !== driver.id) {
+          this.sendAssignmentNotification(
+            previousDriverId,
+            saved.id,
+            'driver',
+            'You have been unassigned from a delivery order.',
+          );
+        }
         return saved;
       });
   }
@@ -806,6 +992,48 @@ export class OrdersService {
     return user;
   }
 
+  /** `ORD-YYYYMMDD-<6 base36 chars>` — ~2.1B suffixes per day make collisions
+   * practically impossible (previously `ORD-YYYYMMDD-<4 digits>` = 10k/day). */
+  private generateOrderId(): string {
+    const now = new Date();
+    const date = `${now.getFullYear()}${(now.getMonth() + 1)
+      .toString()
+      .padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}`;
+    const random = Math.random().toString(36).slice(2, 8).toUpperCase();
+    return `ORD-${date}-${random}`;
+  }
+
+  /**
+   * Runs a transaction that creates an order, retrying on a primary-key /
+   * unique constraint collision (Postgres error 23505). The `orders.id`
+   * column is the PK so the database guarantees uniqueness — this retry
+   * simply converts a (now very unlikely) collision into a transparent
+   * regeneration instead of a 500.
+   */
+  private async withIdCollisionRetry<T>(run: () => Promise<T>): Promise<T> {
+    const MAX_ATTEMPTS = 5;
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      try {
+        return await run();
+      } catch (error) {
+        if (!this.isUniqueViolation(error)) {
+          throw error;
+        }
+        lastError = error;
+      }
+    }
+
+    throw lastError;
+  }
+
+  private isUniqueViolation(error: unknown): boolean {
+    const driverError = (error as { driverError?: { code?: string } })
+      ?.driverError;
+    return driverError?.code === '23505';
+  }
+
   /**
    * Pushes an assignment notification to the newly assigned staff member or
    * driver. Fire-and-forget: push failures must never break the assignment.
@@ -873,9 +1101,10 @@ export class OrdersService {
   /**
    * Emits the `order.updated` socket event to the relevant recipients after any
    * order mutation. Fire-and-forget: a failure here must never break the REST
-   * flow that triggered it.
+   * flow that triggered it. Public so callers that own their own transaction
+   * (e.g. cart checkout) can emit after commit.
    */
-  private async emitOrderUpdate(orderId: string): Promise<void> {
+  async emitOrderUpdate(orderId: string): Promise<void> {
     try {
       const order = await this.loadOrderForBroadcast(orderId);
       this.ordersGateway.broadcastOrderUpdate(order);

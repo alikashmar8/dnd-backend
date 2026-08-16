@@ -1,7 +1,7 @@
 import {
   IsBoolean,
-  IsOptional,
   IsNumber,
+  IsOptional,
   IsString,
   Min,
 } from 'class-validator';
@@ -47,4 +47,12 @@ export class UpdateMenuItemDto {
   @IsOptional()
   @IsNumber()
   restaurantId?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isDailyDish?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isHealthyItem?: boolean;
 }

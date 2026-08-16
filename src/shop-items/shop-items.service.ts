@@ -102,6 +102,14 @@ export class ShopItemsService {
       });
     }
 
+    if (query.is_new_item === true) {
+      qb.andWhere('item.isNewItem = true');
+    }
+
+    if (query.is_popular_item === true) {
+      qb.andWhere('item.isPopularItem = true');
+    }
+
     const skip = query.skip ?? 0;
     const take = query.take ?? 20;
 

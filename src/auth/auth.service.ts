@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ModuleRef } from '@nestjs/core';
+import { ConfigService } from '@nestjs/config';
 import { DataSource, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User } from '../users/entities/user.entity';
@@ -19,6 +20,7 @@ export class AuthService {
     private readonly deviceTokenRepository: Repository<DeviceToken>,
     private readonly dataSource: DataSource,
     private readonly moduleRef: ModuleRef,
+    private readonly configService: ConfigService,
   ) {}
 
   async register(registerDto: RegisterDto, deviceInfo?: string) {
@@ -66,6 +68,7 @@ export class AuthService {
         fcmToken: registerDto.fcmToken || null,
         status: DeviceTokenStatus.ACTIVE,
         lastUsedAt: new Date(),
+        expiresAt: this.getTokenExpiry(),
       });
       await manager.save(deviceToken);
 
@@ -142,6 +145,7 @@ export class AuthService {
       fcmToken: loginDto.fcmToken || null,
       status: DeviceTokenStatus.ACTIVE,
       lastUsedAt: new Date(),
+      expiresAt: this.getTokenExpiry(),
     });
 
     await this.deviceTokenRepository.save(deviceToken);
@@ -181,6 +185,14 @@ export class AuthService {
     );
   }
 
+  /** Session lifetime for newly issued device tokens (default 30 days). */
+  private getTokenExpiry(): Date {
+    const days = this.configService.get<number>('AUTH_TOKEN_EXPIRY_DAYS', 30);
+    const ttlMs =
+      (Number.isFinite(Number(days)) ? Number(days) : 30) * 24 * 60 * 60 * 1000;
+    return new Date(Date.now() + ttlMs);
+  }
+
   async validateUserByToken(accessToken: string): Promise<User> {
     const deviceToken = await this.deviceTokenRepository.findOne({
       where: { accessToken, status: DeviceTokenStatus.ACTIVE },
@@ -188,6 +200,17 @@ export class AuthService {
     });
 
     if (!deviceToken) {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    // Tokens issued before expiry was introduced have a null expiresAt; treat
+    // them as valid (grace) so existing sessions aren't force-logged-out.
+    if (
+      deviceToken.expiresAt &&
+      deviceToken.expiresAt.getTime() <= Date.now()
+    ) {
+      deviceToken.status = DeviceTokenStatus.INACTIVE;
+      await this.deviceTokenRepository.save(deviceToken);
       throw new UnauthorizedException('Invalid or expired token');
     }
 

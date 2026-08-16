@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Headers,
   HttpCode,
   HttpStatus,
   Post,
@@ -33,6 +34,7 @@ export class PasswordResetController {
     return await this.passwordResetService.resetPassword(
       dto.token,
       dto.code,
+      dto.identifier,
       dto.password,
     );
   }
@@ -40,14 +42,17 @@ export class PasswordResetController {
   @Post('change-password')
   @UseGuards(AuthGuard)
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async changePassword(
     @CurrentUser('id') userId: number,
+    @Headers('authorization') authHeader: string,
     @Body() dto: ChangePasswordDto,
   ) {
     return await this.passwordResetService.changePassword(
       userId,
       dto.currentPassword,
       dto.newPassword,
+      authHeader?.replace('Bearer ', ''),
     );
   }
 }

@@ -8,8 +8,8 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { MenuCategory } from './menu-category.entity';
 import { Restaurant } from '../../restaurants/entities/restaurant.entity';
+import { MenuCategory } from './menu-category.entity';
 
 @Entity('menu_items')
 export class MenuItem {
@@ -52,6 +52,14 @@ export class MenuItem {
 
   @Column({ type: 'boolean', default: true })
   available!: boolean;
+
+  @Index()
+  @Column({ type: 'boolean', default: false })
+  isDailyDish!: boolean;
+
+  @Index()
+  @Column({ type: 'boolean', default: false })
+  isHealthyItem!: boolean;
 
   @Column({ type: 'int', nullable: true })
   restaurantId!: number | null;

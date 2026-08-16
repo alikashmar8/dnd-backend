@@ -1,17 +1,24 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { User } from '../users/entities/user.entity';
 import { DeviceToken } from './entities/device-token.entity';
 import { ChatService } from '../chat/chat.service';
 import { UnauthorizedException } from '@nestjs/common';
 
+jest.mock('bcryptjs', () => ({
+  compare: jest.fn().mockResolvedValue(true),
+  hash: jest.fn().mockResolvedValue('hashed'),
+}));
+
 const mockRepository = () => ({
   find: jest.fn(),
   findOne: jest.fn(),
   create: jest.fn(),
   save: jest.fn(),
+  update: jest.fn(),
 });
 
 const mockChatService = {
@@ -62,6 +69,10 @@ describe('AuthService', () => {
         },
         { provide: DataSource, useValue: mockDataSource },
         { provide: ChatService, useValue: mockChatService },
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn().mockReturnValue(30) },
+        },
       ],
     }).compile();
 
@@ -101,6 +112,7 @@ describe('AuthService', () => {
         1,
         99,
         mockManager,
+        'support',
       );
       expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
     });
@@ -144,6 +156,79 @@ describe('AuthService', () => {
       await expect(service.register(registerDto)).rejects.toThrow('DB error');
       expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
       expect(mockQueryRunner.release).toHaveBeenCalled();
+    });
+  });
+
+  describe('token expiry', () => {
+    it('should reject an expired token and revoke it', async () => {
+      deviceTokenRepository.findOne.mockResolvedValue({
+        user: { id: 1 },
+        status: 'active',
+        expiresAt: new Date(Date.now() - 1000),
+        lastUsedAt: null,
+      });
+      deviceTokenRepository.save.mockResolvedValue({});
+
+      await expect(
+        service.validateUserByToken('expired-token'),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(deviceTokenRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'inactive' }),
+      );
+    });
+
+    it('should accept an active token with a future expiry', async () => {
+      deviceTokenRepository.findOne.mockResolvedValue({
+        user: { id: 1 },
+        status: 'active',
+        expiresAt: new Date(Date.now() + 60_000),
+        lastUsedAt: null,
+      });
+      deviceTokenRepository.save.mockResolvedValue({});
+
+      const user = await service.validateUserByToken('valid-token');
+      expect(user).toEqual({ id: 1 });
+    });
+
+    it('should accept a legacy token with no expiry (grace)', async () => {
+      deviceTokenRepository.findOne.mockResolvedValue({
+        user: { id: 1 },
+        status: 'active',
+        expiresAt: null,
+        lastUsedAt: null,
+      });
+      deviceTokenRepository.save.mockResolvedValue({});
+
+      const user = await service.validateUserByToken('legacy-token');
+      expect(user).toEqual({ id: 1 });
+    });
+
+    it('should stamp an expiry on tokens issued at login', async () => {
+      userRepository.findOne.mockResolvedValue({
+        id: 1,
+        phone: '+96176666666',
+        passwordHash: 'hash',
+        email: 'a@b.com',
+        name: 'T',
+        role: 'customer',
+      });
+      deviceTokenRepository.update.mockResolvedValue({});
+      deviceTokenRepository.create.mockReturnValue({});
+      deviceTokenRepository.save.mockResolvedValue({});
+      const mockChat = { getOrCreateThread: jest.fn() };
+      (service as any).moduleRef = {
+        get: jest.fn().mockReturnValue(mockChat),
+      };
+      mockChat.getOrCreateThread.mockResolvedValue({});
+
+      await service.login(
+        { phone: '+96176666666', password: 'password123' },
+        'test-agent',
+      );
+
+      const created = deviceTokenRepository.create.mock.calls[0][0];
+      expect(created.expiresAt).toBeInstanceOf(Date);
+      expect(created.expiresAt.getTime()).toBeGreaterThan(Date.now());
     });
   });
 });
