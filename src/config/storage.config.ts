@@ -28,7 +28,7 @@ export const storageConfig = registerAs('storage', () => {
     publicUrl:
       process.env.ASSET_BASE_URL ||
       (isDev
-        ? `http://localhost:9000/${process.env.STORAGE_BUCKET || 'dnd-uploads'}`
+        ? `http://192.168.1.127:9000/${process.env.STORAGE_BUCKET || 'dnd-uploads'}`
         : ''),
   };
 });

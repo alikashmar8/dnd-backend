@@ -14,6 +14,10 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   email?: string;
+
+  @IsOptional()
+  @IsString()
+  profileImage?: string;
 }
 
 export class CreateUserDto {

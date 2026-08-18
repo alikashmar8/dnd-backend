@@ -32,6 +32,9 @@ export class User {
   @Column({ type: 'varchar', length: 20, unique: true })
   phone!: string;
 
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  profileImage?: string;
+
   @Column({ type: 'enum', enum: UserRole, default: UserRole.CUSTOMER })
   role!: UserRole;
 
