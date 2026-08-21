@@ -75,13 +75,4 @@ export class GetMenuItemsQueryDto extends PaginationDto {
   @Transform(({ value }) => value === 'true')
   @IsBoolean()
   is_daily_dish?: boolean;
-
-  @IsOptional()
-  is_new_item?: boolean;
-
-  @IsOptional()
-  is_popular_item?: boolean;
-
-  @IsOptional()
-  is_healthy_item?: boolean;
 }
