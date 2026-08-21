@@ -110,6 +110,10 @@ export class ShopItemsService {
       qb.andWhere('item.isPopularItem = true');
     }
 
+    if (query.displayOnCheckout === true) {
+      qb.andWhere('item.displayOnCheckout = true');
+    }
+
     const skip = query.skip ?? 0;
     const take = query.take ?? 20;
 

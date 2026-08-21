@@ -59,6 +59,10 @@ export class ShopItem {
   @Index()
   @Column({ type: 'boolean', default: false })
   isPopularItem!: boolean;
+  
+  @Index()
+  @Column({ type: 'boolean', default: false })
+  displayOnCheckout!: boolean;
 
   @Column({ type: 'simple-array', default: '' })
   dietaryTags!: string[];

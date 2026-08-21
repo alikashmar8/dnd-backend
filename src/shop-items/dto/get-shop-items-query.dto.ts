@@ -68,4 +68,9 @@ export class GetShopItemsQueryDto extends PaginationDto {
   @Transform(({ value }) => value === 'true')
   @IsBoolean()
   is_popular_item?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true')
+  @IsBoolean()
+  displayOnCheckout?: boolean;
 }
