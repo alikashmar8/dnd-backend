@@ -66,4 +66,8 @@ export class CreateShopItemDto {
   @IsOptional()
   @IsBoolean()
   isPopularItem?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  displayOnCheckout?: boolean;
 }
