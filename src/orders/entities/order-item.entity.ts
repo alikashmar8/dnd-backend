@@ -1,6 +1,7 @@
 import {
   Column,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -8,6 +9,7 @@ import {
 import { Order } from './order.entity';
 
 @Entity('order_items')
+@Index('idx_order_items_order_id', ['orderId'])
 export class OrderItem {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

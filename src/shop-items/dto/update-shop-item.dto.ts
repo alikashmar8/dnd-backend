@@ -60,4 +60,8 @@ export class UpdateShopItemDto {
   @IsOptional()
   @IsBoolean()
   isPopularItem?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  displayOnCheckout?: boolean;
 }

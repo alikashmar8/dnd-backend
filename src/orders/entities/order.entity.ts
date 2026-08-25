@@ -25,6 +25,7 @@ import { OrderItem } from './order-item.entity';
 @Index('idx_orders_driver_queue', ['status', 'driverId'], {
   where: `"status" IN ('waiting_for_pickup', 'in_route')`,
 })
+@Index('idx_orders_status_created_at', ['status', 'createdAt'])
 export class Order {
   @PrimaryColumn({ type: 'varchar', length: 50 })
   id!: string;
