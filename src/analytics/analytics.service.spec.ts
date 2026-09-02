@@ -36,12 +36,17 @@ describe('AnalyticsService', () => {
   });
 
   it('should aggregate top categories on orderItem.name (not a join alias)', async () => {
-    let selectSql = '';
+    // Recorded [expression, alias] pairs from select()/addSelect() calls.
+    const selections: string[][] = [];
     let groupBySql = '';
 
     const qb = {
-      select: jest.fn().mockImplementation((cols: string[]) => {
-        selectSql = cols.join(', ');
+      select: jest.fn().mockImplementation((...args: unknown[]) => {
+        selections.push(args.map(String));
+        return qb;
+      }),
+      addSelect: jest.fn().mockImplementation((...args: unknown[]) => {
+        selections.push(args.map(String));
         return qb;
       }),
       leftJoin: jest.fn().mockReturnThis(),
@@ -67,10 +72,10 @@ describe('AnalyticsService', () => {
 
     const result = await service.getTopCategories(undefined, 10);
 
-    // Regression: the select/groupBy must reference the order_item.name column,
-    // not the old broken `orderItem.itemName` (no such property on OrderItem).
-    expect(selectSql).toContain('orderItem.name as itemName');
-    expect(selectSql).not.toContain('orderItem.itemName');
+    // Regression 1: the select/groupBy must reference the order_item.name
+    // column, not the old broken `orderItem.itemName` (no such property).
+    const expressions = selections.map(([expression]) => expression);
+    expect(expressions).not.toContain('orderItem.itemName');
     expect(groupBySql).toContain('orderItem.name');
     expect(groupBySql).not.toContain('orderItem.itemName');
     expect(qb.where).toHaveBeenCalledWith(
@@ -78,6 +83,18 @@ describe('AnalyticsService', () => {
       expect.objectContaining({ cancelled: 'cancelled' }),
     );
 
+    // Regression 2: aliases must go through the two-argument form so TypeORM
+    // quotes them — inline `as camelCase` strings are case-folded by Postgres
+    // and every mapped field would come back undefined.
+    expect(selections).toEqual(
+      expect.arrayContaining([
+        ['orderItem.name', 'itemName'],
+        ['orderItem.itemType', 'itemType'],
+        ['SUM(orderItem.quantity)', 'totalQuantity'],
+        ['SUM(orderItem.price * orderItem.quantity)', 'totalRevenue'],
+        ['COUNT(DISTINCT order.id)', 'orderCount'],
+      ]),
+    );
     expect(result).toEqual([
       expect.objectContaining({
         itemName: 'Burger',
